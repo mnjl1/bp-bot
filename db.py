@@ -13,12 +13,21 @@ create_readings_table = """
     );
     """
 
+
 def init_db():
-    conn = sqlite3.connect('bp.db')
-    cur = conn.cursor()
-    cur.execute(create_readings_table)
-    conn.commit()
-    conn.close()
+    with sqlite3.connect('bp.db') as conn:
+        cur = conn.cursor()
+        cur.execute(create_readings_table)
+
+
+def add_reading(user_id, systolic, diastolic, pulse=None, note=None):
+    with sqlite3.connect('bp.db') as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO readings (user_id, systolic, diastolic, pulse, note)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (user_id, systolic, diastolic, pulse, note))
 
 
 if __name__ == '__main__':
