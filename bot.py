@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram import Update
-from db import add_reading, get_last
+from db import add_reading, get_last, get_avg
 
 
 load_dotenv()
@@ -51,9 +51,20 @@ async def show_last_readings(update, context):
     await update.message.reply_text(report)
 
 
+async def show_avg(update, context):
+    user_id = update.effective_user.id
+    data = get_avg(user_id=user_id)
+    avr_systolic = data[0][0]
+    avr_diastolic = data[0][1]
+    avr_pulse = data[0][2]
+    record = f'Average: {avr_systolic}/{avr_diastolic}/{avr_pulse}'
+    await update.message.reply_text(record)
+
+
 if __name__ == '__main__':
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.Regex(READING_PATTERN), handle_reading))
     app.add_handler(CommandHandler('last', show_last_readings))
+    app.add_handler(CommandHandler('avg', show_avg))
     app.run_polling()
