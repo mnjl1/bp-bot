@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram import Update
 from db import add_reading, get_last, get_avg
+from utils import get_period_of_day
 
 
 load_dotenv()
@@ -43,10 +44,11 @@ async def show_last_readings(update, context):
 
     for record in records:
         date = record[2]
+        part_of_the_day = get_period_of_day(date=date)
         systolic = record[3]
         diastolic = record[4]
         pulse = record[5]
-        report += f'{date} {systolic}/{diastolic}, pulse: {pulse}\n'
+        report += f'{date} ({part_of_the_day}) {systolic}/{diastolic}, pulse: {pulse}\n'
 
     await update.message.reply_text(report)
 
