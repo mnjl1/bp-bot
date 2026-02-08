@@ -14,11 +14,19 @@ create_readings_table = """
     );
     """
 
+create_user_settings_table = """
+    CREATE TABLE IF NOT EXISTS user_settings(
+        user_id INTEGER PRIMARY KEY,
+        language TEXT DEFAULT 'UA'
+    );
+"""
+
 
 def init_db():
     with sqlite3.connect('bp.db') as conn:
         cur = conn.cursor()
         cur.execute(create_readings_table)
+        cur.execute(create_user_settings_table)
 
 
 def add_reading(user_id, systolic, diastolic, pulse=None, note=None):
@@ -42,7 +50,7 @@ def get_last(user_id, n=5):
                     """,
                     (user_id, n)
         )
-    return cur.fetchall()
+        return cur.fetchall()
 
 
 def get_avg(user_id, days=7):
@@ -57,7 +65,34 @@ def get_avg(user_id, days=7):
             """,
             (user_id, last_days)
         )
-    return cur.fetchall()
+        return cur.fetchall()
+
+
+def get_user_language(user_id):
+    with sqlite3.connect('bp.db') as con:
+        cur = con.cursor()
+        cur.execute(
+            """
+            SELECT language FROM user_settings WHERE user_id = ?
+            """,
+            (user_id,)
+        )
+        lang = cur.fetchall()
+        try:
+            return lang[0][0]
+        except:
+            return 'UA'
+
+
+def set_user_language(user_id, language):
+    with sqlite3.connect('bp.db') as con:
+        cur = con.cursor()
+        cur.execute(
+                """
+                INSERT or REPLACE INTO user_settings (user_id, language) VALUES (?, ?)
+                """,
+                (user_id, language)
+            )
 
 
 if __name__ == '__main__':

@@ -2,8 +2,9 @@ import os
 from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram import Update
-from db import add_reading, get_last, get_avg
+from db import add_reading, get_last, get_avg, get_user_language, set_user_language
 from utils import get_period_of_day
+from messages import get_text
 
 
 load_dotenv()
@@ -14,13 +15,15 @@ READING_PATTERN = r'^\d{2,3}/\d{2,3}(/\d{2,3})?$'
 
 
 async def start(update, context):
-    await update.message.reply_text(
-        """Welcome to BP Tracker!
-          Send your reading as 120/80 or 120/80/72"""
-        )
+    user_id = update.effective_user.id
+    lang = get_user_language(user_id=user_id)
+    welcome = get_text(lang=lang, key='welcome')
+    await update.message.reply_text(welcome)
 
 
 async def handle_reading(update, context):
+    user_id = update.effective_user.id
+    lang = get_user_language(user_id=user_id)
     text = update.message.text
     text = text.split('/')
     systolic = int(text[0])
@@ -33,34 +36,49 @@ async def handle_reading(update, context):
 
     user_id = update.effective_user.id
     add_reading(user_id, systolic, diastolic, pulse)
-    await update.message.reply_text(f'Saved {systolic}/{diastolic}, pulse {pulse}')
+    await update.message.reply_text(f"""{get_text(lang=lang, key='saved')} {systolic}/{diastolic},
+                                     {get_text(lang=lang, key='pulse')} {pulse}""")
 
 
 async def show_last_readings(update, context):
     user_id = update.effective_user.id
+    lang = get_user_language(user_id=user_id)
     records = get_last(user_id=user_id)
-
     report = """"""
 
     for record in records:
         date = record[2]
-        part_of_the_day = get_period_of_day(date=date)
+        part_of_the_day = get_period_of_day(date=date, lang=lang)
         systolic = record[3]
         diastolic = record[4]
         pulse = record[5]
-        report += f'{date} ({part_of_the_day}) {systolic}/{diastolic}, pulse: {pulse}\n'
+        report += f"""{date} ({part_of_the_day}) {systolic}/{diastolic},
+                    {get_text(lang=lang, key='pulse')}: {pulse}\n"""
 
     await update.message.reply_text(report)
 
 
 async def show_avg(update, context):
     user_id = update.effective_user.id
+    lang = get_user_language(user_id=user_id)
+    user_id = update.effective_user.id
     data = get_avg(user_id=user_id)
     avr_systolic = data[0][0]
     avr_diastolic = data[0][1]
     avr_pulse = data[0][2]
-    record = f'Average: {avr_systolic}/{avr_diastolic}/{avr_pulse}'
+    record = f"{get_text(lang=lang, key='average')}: {avr_systolic}/{avr_diastolic}/{avr_pulse}"
     await update.message.reply_text(record)
+
+
+async def set_english(update, context):
+    user_id = update.effective_user.id
+    set_user_language(user_id=user_id, language='EN')
+    await update.message.reply_text('English is set')
+
+async def set_ukrainian(update, context):
+    user_id = update.effective_user.id
+    set_user_language(user_id=user_id, language='UA')
+    await update.message.reply_text('Українська мова встановлена')
 
 
 if __name__ == '__main__':
@@ -69,4 +87,6 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.Regex(READING_PATTERN), handle_reading))
     app.add_handler(CommandHandler('last', show_last_readings))
     app.add_handler(CommandHandler('avg', show_avg))
+    app.add_handler(CommandHandler('en', set_english))
+    app.add_handler(CommandHandler('ua', set_ukrainian))
     app.run_polling()
