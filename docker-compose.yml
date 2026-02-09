@@ -1,0 +1,10 @@
+
+services:
+  bot:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./bp.db:/app/bp.db
+    restart: unless-stopped
+    network_mode: host
