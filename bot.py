@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
-from telegram import Update
+from telegram import Update, BotCommand
 from db import add_reading, get_last, get_avg, get_user_language, set_user_language
 from utils import get_period_of_day
 from messages import get_text
@@ -17,8 +17,15 @@ READING_PATTERN = r'^\d{2,3}/\d{2,3}(/\d{2,3})?$'
 async def start(update, context):
     user_id = update.effective_user.id
     lang = get_user_language(user_id=user_id)
-    welcome = get_text(lang=lang, key='welcome')
+    welcome = get_text(lang=lang, key='welcome_detailed')
     await update.message.reply_text(welcome)
+
+
+async def help(update, context):
+    user_id = update.effective_user.id
+    lang = get_user_language(user_id=user_id)
+    help_text = get_text(lang=lang, key='help_text')
+    await update.message.reply_text(help_text)
 
 
 async def handle_reading(update, context):
@@ -81,9 +88,19 @@ async def set_ukrainian(update, context):
     await update.message.reply_text('Українська мова встановлена')
 
 
+async def post_init(application):
+    await application.bot.set_my_commands([
+        BotCommand('start', 'Welcome message and instructions'),
+        BotCommand('help', 'Show all commands'),
+        BotCommand('last', 'Show 5 last records'),
+        BotCommand('avg', 'Show average for last 7 days')
+    ])
+
+
 if __name__ == '__main__':
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler('start', start))
+    app.add_handler(CommandHandler('help', help))
     app.add_handler(MessageHandler(filters.Regex(READING_PATTERN), handle_reading))
     app.add_handler(CommandHandler('last', show_last_readings))
     app.add_handler(CommandHandler('avg', show_avg))
