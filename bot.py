@@ -5,6 +5,7 @@ from telegram import Update, BotCommand
 from db import add_reading, get_last, get_avg, get_user_language, set_user_language
 from utils import get_period_of_day
 from messages import get_text
+from admin import show_admin_stats
 
 
 load_dotenv()
@@ -73,7 +74,8 @@ async def show_avg(update, context):
     avr_systolic = data[0][0]
     avr_diastolic = data[0][1]
     avr_pulse = data[0][2]
-    record = f"{get_text(lang=lang, key='average')}: {avr_systolic}/{avr_diastolic}/{avr_pulse}"
+    record = f"""{get_text(lang=lang, key='average')}:
+            {avr_systolic:.0f}/{avr_diastolic:.0f}/{avr_pulse:.0f}"""
     await update.message.reply_text(record)
 
 
@@ -81,6 +83,7 @@ async def set_english(update, context):
     user_id = update.effective_user.id
     set_user_language(user_id=user_id, language='EN')
     await update.message.reply_text('English is set')
+
 
 async def set_ukrainian(update, context):
     user_id = update.effective_user.id
@@ -106,4 +109,5 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler('avg', show_avg))
     app.add_handler(CommandHandler('en', set_english))
     app.add_handler(CommandHandler('ua', set_ukrainian))
+    app.add_handler(CommandHandler('admin_stats', show_admin_stats))
     app.run_polling()

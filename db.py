@@ -95,5 +95,27 @@ def set_user_language(user_id, language):
             )
 
 
+def get_total_users():
+    with sqlite3.connect('bp.db') as con:
+        cur = con.cursor()
+        cur.execute(
+            """
+            SELECT COUNT(DISTINCT user_id) FROM readings
+            """
+        )
+        return cur.fetchall()[0][0]
+
+
+def get_total_readings()
+    with sqlite3.connect('bp.db') as con:
+        cur = con.cursor()
+        cur.execute(
+            """
+            SELECT COUNT(readings) FROM readings
+            """
+        )
+        return cur.fetchall()[0][0]
+
+
 if __name__ == '__main__':
     init_db()
