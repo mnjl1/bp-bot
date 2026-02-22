@@ -106,12 +106,12 @@ def get_total_users():
         return cur.fetchall()[0][0]
 
 
-def get_total_readings()
+def get_total_readings():
     with sqlite3.connect('bp.db') as con:
         cur = con.cursor()
         cur.execute(
             """
-            SELECT COUNT(readings) FROM readings
+            SELECT COUNT(*) FROM readings
             """
         )
         return cur.fetchall()[0][0]
