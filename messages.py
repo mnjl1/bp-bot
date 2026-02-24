@@ -4,8 +4,9 @@ UA = {
     'morning': 'Ранок',
     'midday': 'День',
     'evening': 'Вечір',
-    'pulse': 'пульс',
+    'pulse': 'пульс:',
     'average': 'Середні показники за останні 7 днів',
+    'wrong_input': 'Не реальні показники',
     'welcome_detailed': """
       Вітаю! Я трекер артеріального тиску.
 
@@ -39,8 +40,9 @@ EN = {
     'morning': 'Morning',
     'midday': 'Midday',
     'evening': 'Evening',
-    'pulse': 'pulse',
+    'pulse': 'pulse:',
     'average': 'Average for the last 7 days',
+    'wrong_input': 'Input is not correct',
     'welcome_detailed': '''Welcome! I'm your blood pressure tracker.
 
                         📝 How to use:

@@ -3,16 +3,15 @@ from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram import Update, BotCommand
 from db import add_reading, get_last, get_avg, get_user_language, set_user_language
-from utils import get_period_of_day
+from utils import get_period_of_day, validate_reading
 from messages import get_text
 from admin import show_admin_stats
+from constants import READING_PATTERN
 
 
 load_dotenv()
 
 BOT_TOKEN = os.environ['BOT_TOKEN']
-
-READING_PATTERN = r'^\d{2,3}/\d{2,3}(/\d{2,3})?$'
 
 
 async def start(update, context):
@@ -42,10 +41,15 @@ async def handle_reading(update, context):
     except:
         pass
 
-    user_id = update.effective_user.id
-    add_reading(user_id, systolic, diastolic, pulse)
-    await update.message.reply_text(f"""{get_text(lang=lang, key='saved')} {systolic}/{diastolic},
-                                     {get_text(lang=lang, key='pulse')} {pulse}""")
+    validated_values = validate_reading(systolic, diastolic, pulse)
+
+    if validated_values:
+        systolic, diastolic, pulse = validated_values
+        add_reading(user_id, systolic, diastolic, pulse)
+        await update.message.reply_text(f"""{get_text(lang=lang, key='saved')} {systolic}/{diastolic},
+                                     {get_text(lang=lang, key='pulse')}{pulse}""")
+    else:
+        await update.message.reply_text(get_text(lang=lang, key='wrong_input'))
 
 
 async def show_last_readings(update, context):
