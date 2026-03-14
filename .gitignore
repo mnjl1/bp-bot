@@ -2,3 +2,4 @@
 venv/
 *.db
 __pycache__/
+TODO.md
