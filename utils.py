@@ -28,3 +28,27 @@ def validate_reading(systolic, diastolic, pulse):
             if not (min_value <= values[name] <= max_value):
                 return
     return (systolic, diastolic, pulse)
+
+
+def process_user_input(text):
+    notes = text.split()
+    sentence = " ".join(notes[1:]) or None
+    records = notes[0].split('/')
+    systolic = int(records[0])
+    diastolic = int(records[1])
+    pulse = None
+    try:
+        pulse = int(records[2])
+    except:
+        pass
+    records = {
+        'systolic': systolic,
+        'diastolic': diastolic,
+        'pulse': pulse
+    }
+    return (records, sentence)
+
+
+def convert_date(date):
+    date_obj = datetime.strptime(date, '%Y-%m-%d %H:%M:%S')
+    return date_obj.strftime('%d/%m/%y')

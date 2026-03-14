@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram import Update, BotCommand
 from db import add_reading, get_last, get_avg, get_user_language, set_user_language
-from utils import get_period_of_day, validate_reading
+from utils import get_period_of_day, validate_reading, process_user_input, convert_date
 from messages import get_text
 from admin import show_admin_stats
 from constants import READING_PATTERN
@@ -32,22 +32,20 @@ async def handle_reading(update, context):
     user_id = update.effective_user.id
     lang = get_user_language(user_id=user_id)
     text = update.message.text
-    text = text.split('/')
-    systolic = int(text[0])
-    diastolic = int(text[1])
-    pulse = None
-    try:
-        pulse = int(text[2])
-    except:
-        pass
+    records, note = process_user_input(text)
+    systolic = records['systolic']
+    diastolic = records['diastolic']
+    pulse = records['pulse']
 
     validated_values = validate_reading(systolic, diastolic, pulse)
 
     if validated_values:
         systolic, diastolic, pulse = validated_values
-        add_reading(user_id, systolic, diastolic, pulse)
-        await update.message.reply_text(f"""{get_text(lang=lang, key='saved')} {systolic}/{diastolic},
-                                     {get_text(lang=lang, key='pulse')}{pulse}""")
+        add_reading(user_id, systolic, diastolic, pulse, note)
+        await update.message.reply_text(f"""{get_text(lang=lang, key='saved')}
+                                    {systolic}/{diastolic},
+                                    {get_text(lang=lang, key='pulse')}{pulse}
+                                    {note if note else ''}""")
     else:
         await update.message.reply_text(get_text(lang=lang, key='wrong_input'))
 
@@ -59,13 +57,13 @@ async def show_last_readings(update, context):
     report = """"""
 
     for record in records:
-        date = record[2]
-        part_of_the_day = get_period_of_day(date=date, lang=lang)
+        date = convert_date(record[2])
+        part_of_the_day = get_period_of_day(date=record[2], lang=lang)
         systolic = record[3]
         diastolic = record[4]
         pulse = record[5]
-        report += f"""{date} ({part_of_the_day}) {systolic}/{diastolic},
-                    {get_text(lang=lang, key='pulse')}: {pulse}\n"""
+        note = record[6]
+        report += f"{date} ({part_of_the_day}) {systolic}/{diastolic}, {get_text(lang=lang, key='pulse')} {pulse} {note if note else ''}\n\n"
 
     await update.message.reply_text(report)
 

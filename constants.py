@@ -1,6 +1,6 @@
 
 #example 120/80/70
-READING_PATTERN = r'^\d{2,3}/\d{2,3}(/\d{2,3})?$'
+READING_PATTERN = r'^\d{2,3}/\d{2,3}(/\d{2,3})?.*'
 
 # Period of day hour boundaries
 MORNING_END = 12
