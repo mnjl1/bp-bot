@@ -20,6 +20,7 @@ def setup_logging():
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         level=logging.INFO,
     )
+    logging.getLogger('httpx').setLevel(logging.WARNING)
 
 
 async def error_handler(update, context):
