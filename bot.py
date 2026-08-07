@@ -1,3 +1,4 @@
+import logging
 import os
 from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
@@ -10,6 +11,9 @@ from constants import READING_PATTERN
 
 
 load_dotenv()
+
+def setup_logging():
+    logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.environ['BOT_TOKEN']
 
