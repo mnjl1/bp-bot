@@ -10,10 +10,24 @@ from admin import show_admin_stats
 from constants import READING_PATTERN
 
 
+logger = logging.getLogger(__name__)
+
 load_dotenv()
 
+
 def setup_logging():
-    logger = logging.getLogger(__name__)
+    logging.basicConfig(
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        level=logging.INFO,
+    )
+
+
+async def error_handler(update, context):
+    logger.error(
+        'Unhandled exception while processing a Telegram update',
+        exc_info=context.error,
+    )
+
 
 BOT_TOKEN = os.environ['BOT_TOKEN']
 
@@ -107,7 +121,9 @@ async def post_init(application):
 
 
 if __name__ == '__main__':
+    setup_logging()
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+    app.add_error_handler(error_handler)
     app.add_handler(CommandHandler('start', start))
     app.add_handler(CommandHandler('help', help))
     app.add_handler(MessageHandler(filters.Regex(READING_PATTERN), handle_reading))
