@@ -3,7 +3,8 @@ import os
 from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram import Update, BotCommand
-from db import add_reading, get_last, get_avg, get_user_language, set_user_language
+from db import (add_reading, get_last, get_avg, get_user_language,
+                set_user_language, ensure_user, check_database)
 from utils import get_period_of_day, validate_reading, process_user_input, convert_date
 from messages import get_text
 from admin import show_admin_stats
@@ -35,6 +36,7 @@ BOT_TOKEN = os.environ['BOT_TOKEN']
 
 async def start(update, context):
     user_id = update.effective_user.id
+    ensure_user(user_id)
     lang = get_user_language(user_id=user_id)
     welcome = get_text(lang=lang, key='welcome_detailed')
     await update.message.reply_text(welcome)
@@ -123,6 +125,7 @@ async def post_init(application):
 
 if __name__ == '__main__':
     setup_logging()
+    check_database()
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     app.add_error_handler(error_handler)
     app.add_handler(CommandHandler('start', start))
