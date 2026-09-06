@@ -63,9 +63,11 @@ async def handle_reading(update, context):
     if validated_values:
         systolic, diastolic, pulse = validated_values
         add_reading(user_id, systolic, diastolic, pulse, note)
+        pulse_part = ''
+        if pulse is not None:
+            pulse_part = f",\n                                    {get_text(lang=lang, key='pulse')}{pulse}"
         await update.message.reply_text(f"""{get_text(lang=lang, key='saved')}
-                                    {systolic}/{diastolic},
-                                    {get_text(lang=lang, key='pulse')}{pulse}
+                                    {systolic}/{diastolic}{pulse_part}
                                     {note if note else ''}""")
     else:
         await update.message.reply_text(get_text(lang=lang, key='wrong_input'))
@@ -84,7 +86,8 @@ async def show_last_readings(update, context):
         diastolic = record[4]
         pulse = record[5]
         note = record[6]
-        report += f"{date} ({part_of_the_day}) {systolic}/{diastolic}, {get_text(lang=lang, key='pulse')} {pulse} {note if note else ''}\n\n"
+        pulse_part = f", {get_text(lang=lang, key='pulse')} {pulse}" if pulse is not None else ''
+        report += f"{date} ({part_of_the_day}) {systolic}/{diastolic}{pulse_part} {note if note else ''}\n\n"
 
     await update.message.reply_text(report)
 
@@ -97,8 +100,9 @@ async def show_avg(update, context):
     avr_systolic = data[0][0]
     avr_diastolic = data[0][1]
     avr_pulse = data[0][2]
+    pulse_part = f"/{avr_pulse:.0f}" if avr_pulse is not None else ''
     record = f"""{get_text(lang=lang, key='average')}:
-            {avr_systolic:.0f}/{avr_diastolic:.0f}/{avr_pulse:.0f}"""
+            {avr_systolic:.0f}/{avr_diastolic:.0f}{pulse_part}"""
     await update.message.reply_text(record)
 
 
