@@ -1,10 +1,12 @@
 import ast
+import re
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 from messages import get_text
+from constants import MAX_NOTE_LENGTH, READING_PATTERN
 from utils import convert_date, get_period_of_day, process_user_input, validate_reading
 
 
@@ -18,6 +20,7 @@ class ReadingDisplayTests(unittest.IsolatedAsyncioTestCase):
                     if isinstance(node, ast.AsyncFunctionDef) and node.name in names]
         self.namespace = {
             'get_text': get_text,
+            'MAX_NOTE_LENGTH': MAX_NOTE_LENGTH,
             'convert_date': convert_date,
             'get_period_of_day': get_period_of_day,
             'process_user_input': process_user_input,
@@ -33,6 +36,106 @@ class ReadingDisplayTests(unittest.IsolatedAsyncioTestCase):
             effective_user=SimpleNamespace(id=42),
             message=SimpleNamespace(text='', reply_text=AsyncMock()),
         )
+
+    async def test_malformed_readings_are_rejected(self):
+        for lang in ('UA', 'EN'):
+            self.namespace['get_user_language'].return_value = lang
+            for text in ('120/80oops', '120/80/', '120/80/72/', '120/80/1234'):
+                with self.subTest(lang=lang, text=text):
+                    self.assertIsNotNone(re.search(READING_PATTERN, text))
+                    with self.assertRaises(ValueError):
+                        process_user_input(text)
+                    self.update.message.text = text
+                    await self.namespace['handle_reading'](self.update, None)
+                    self.namespace['add_reading'].assert_not_called()
+                    self.update.message.reply_text.assert_awaited_with(get_text(lang, 'wrong_input'))
+
+    def test_parser_rejects_missing_numeric_bp(self):
+        for text in ('', 'abc/80', '120/abc', '120'):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                process_user_input(text)
+
+    async def test_supported_formats_and_note_slashes(self):
+        for lang in ('UA', 'EN'):
+            self.namespace['get_user_language'].return_value = lang
+            for token, pulse in [('138/88', None), ('138/88/76', 76)]:
+                for separator in (' ', '/'):
+                    for note in (None, 'after a walk', 'після прогулянки', 'before/after/walk'):
+                        self.namespace['add_reading'].reset_mock()
+                        self.update.message.text = token + (separator + note if note else '')
+                        await self.namespace['handle_reading'](self.update, None)
+                        self.namespace['add_reading'].assert_called_once_with(42, 138, 88, pulse, note)
+
+    async def test_slash_note_length_limit(self):
+        for lang in ('UA', 'EN'):
+            self.namespace['get_user_language'].return_value = lang
+            for token, pulse in [('138/88', None), ('138/88/76', 76)]:
+                for length in (120, 121):
+                    self.namespace['add_reading'].reset_mock()
+                    note = 'a/b' + 'x' * (length - 3)
+                    self.update.message.text = token + '/' + note
+                    await self.namespace['handle_reading'](self.update, None)
+                    if length == 120:
+                        self.namespace['add_reading'].assert_called_once_with(42, 138, 88, pulse, note)
+                    else:
+                        self.namespace['add_reading'].assert_not_called()
+                        self.update.message.reply_text.assert_awaited_with(
+                            get_text(lang, 'note_too_long').format(limit=120))
+
+    def test_numeric_third_field_is_pulse_and_rest_is_note(self):
+        for text, pulse, note in [('120/80/72/123', 72, '123'),
+                                  ('120/80/extra/value', None, 'extra/value'),
+                                  ('120/80/72oops', None, '72oops')]:
+            records, actual_note = process_user_input(text)
+            self.assertEqual(records['pulse'], pulse)
+            self.assertEqual(actual_note, note)
+
+    async def test_note_limit_without_pulse(self):
+        for lang in ('UA', 'EN'):
+            self.namespace['get_user_language'].return_value = lang
+            for length in (120, 121):
+                self.namespace['add_reading'].reset_mock()
+                note = 'x' * length
+                self.update.message.text = '120/80 ' + note
+                await self.namespace['handle_reading'](self.update, None)
+                if length == 120:
+                    self.namespace['add_reading'].assert_called_once_with(42, 120, 80, None, note)
+                else:
+                    self.namespace['add_reading'].assert_not_called()
+                    self.update.message.reply_text.assert_awaited_with(
+                        get_text(lang, 'note_too_long').format(limit=120))
+
+    def test_help_note_examples(self):
+        self.assertIn('120/80/72 після прогулянки', get_text('UA', 'help_text'))
+        self.assertIn('120/80/72 after a walk', get_text('EN', 'help_text'))
+
+    async def test_note_length_limit(self):
+        for lang in ('UA', 'EN'):
+            for length in (120, 121):
+                with self.subTest(lang=lang, length=length):
+                    self.namespace['get_user_language'].return_value = lang
+                    self.namespace['add_reading'].reset_mock()
+                    note = 'я' * length
+                    self.update.message.text = '128/83/79 ' + note
+                    await self.namespace['handle_reading'](self.update, None)
+                    if length == 120:
+                        self.namespace['add_reading'].assert_called_once_with(42, 128, 83, 79, note)
+                    else:
+                        self.namespace['add_reading'].assert_not_called()
+                        self.update.message.reply_text.assert_awaited_with(
+                            get_text(lang, 'note_too_long').format(limit=120))
+                        self.assertIn('120', self.update.message.reply_text.await_args.args[0])
+
+    async def test_note_length_checked_before_normalization(self):
+        self.namespace['get_user_language'].return_value = 'EN'
+        self.update.message.text = '128/83 poor' + ' ' * 120 + 'sleep'
+        await self.namespace['handle_reading'](self.update, None)
+        self.namespace['add_reading'].assert_not_called()
+
+    def test_help_note_limit(self):
+        for lang in ('UA', 'EN'):
+            self.assertIn('120 символів' if lang == 'UA' else '120 characters',
+                          get_text(lang, 'help_text'))
 
     async def check_last(self, pulse):
         for lang, period, label in [('UA', 'Ранок', 'пульс:'),

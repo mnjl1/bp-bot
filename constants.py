@@ -14,3 +14,8 @@ limits = {
     'pulse': (30, 220)
 }
 
+
+# Reusable report output limits.
+MAX_NOTE_LENGTH = 120
+REPORT_NOTE_COLUMN_WIDTH = 24
+REPORT_MESSAGE_LIMIT = 3500

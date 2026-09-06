@@ -4,11 +4,12 @@ from dotenv import load_dotenv
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram import Update, BotCommand
 from db import (add_reading, get_last, get_avg, get_user_language,
-                set_user_language, ensure_user, check_database)
+                set_user_language, ensure_user, check_database, get_readings_by_date_range)
 from utils import get_period_of_day, validate_reading, process_user_input, convert_date
+from utils import get_report_date_range, format_report
 from messages import get_text
 from admin import show_admin_stats
-from constants import READING_PATTERN
+from constants import READING_PATTERN, MAX_NOTE_LENGTH
 
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,16 @@ async def handle_reading(update, context):
     user_id = update.effective_user.id
     lang = get_user_language(user_id=user_id)
     text = update.message.text
-    records, note = process_user_input(text)
+    try:
+        records, note = process_user_input(text)
+    except ValueError:
+        await update.message.reply_text(get_text(lang, 'wrong_input'))
+        return
+    if note is not None and len(note) > MAX_NOTE_LENGTH:
+        await update.message.reply_text(
+            get_text(lang, 'note_too_long').format(limit=MAX_NOTE_LENGTH))
+        return
+    note = ' '.join(note.split()) if note else None
     systolic = records['systolic']
     diastolic = records['diastolic']
     pulse = records['pulse']
@@ -106,6 +116,20 @@ async def show_avg(update, context):
     await update.message.reply_text(record)
 
 
+async def show_report(update, context):
+    user = update.effective_user
+    lang = get_user_language(user_id=user.id) if user is not None else 'UA'
+    if update.effective_chat.type != 'private':
+        await update.effective_message.reply_text(get_text(lang, 'report_private'))
+        return
+    if user is None:
+        return
+    start, end = get_report_date_range()
+    records = get_readings_by_date_range(user.id, start, end)
+    for message in format_report(records, start, end, lang):
+        await update.effective_message.reply_text(message, parse_mode='HTML')
+
+
 async def set_english(update, context):
     user_id = update.effective_user.id
     set_user_language(user_id=user_id, language='EN')
@@ -123,7 +147,8 @@ async def post_init(application):
         BotCommand('start', 'Welcome message and instructions'),
         BotCommand('help', 'Show all commands'),
         BotCommand('last', 'Show 5 last records'),
-        BotCommand('avg', 'Show average for last 7 days')
+        BotCommand('avg', 'Show average for last 7 days'),
+        BotCommand('report', 'Free report for the last 30 days')
     ])
 
 
@@ -137,6 +162,7 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.Regex(READING_PATTERN), handle_reading))
     app.add_handler(CommandHandler('last', show_last_readings))
     app.add_handler(CommandHandler('avg', show_avg))
+    app.add_handler(CommandHandler('report', show_report))
     app.add_handler(CommandHandler('en', set_english))
     app.add_handler(CommandHandler('ua', set_ukrainian))
     app.add_handler(CommandHandler('admin_stats', show_admin_stats))

@@ -216,6 +216,19 @@ def get_last(user_id, n=5):
         return cur.fetchall()
 
 
+def get_readings_by_date_range(user_id, start_timestamp, end_timestamp):
+    """Return one user's readings in [start_timestamp, end_timestamp)."""
+    if user_id is None:
+        raise ValueError('user_id must not be None')
+    with closing(_connect(DB_PATH, 'ro')) as conn:
+        return conn.execute("""
+            SELECT id, user_id, datetime, systolic, diastolic, pulse, note
+            FROM readings
+            WHERE user_id = ? AND datetime >= ? AND datetime < ?
+            ORDER BY datetime ASC, id ASC
+        """, (user_id, start_timestamp, end_timestamp)).fetchall()
+
+
 def get_avg(user_id, days=7):
     with closing(_connect(DB_PATH)) as conn, conn:
         last_days = datetime.now() - timedelta(days=days)
