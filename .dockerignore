@@ -1,0 +1,13 @@
+.env
+.env.*
+*.db
+*.db.*
+bp.db*
+venv/
+.venv/
+.git/
+__pycache__/
+*.pyc
+.DS_Store
+tests/
+AGENTS.md
