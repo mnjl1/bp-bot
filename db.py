@@ -26,7 +26,7 @@ create_user_settings_table = """
 
 
 DB_PATH = Path(__file__).resolve().parent / 'bp.db'
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 CREATE_USERS = """
     CREATE TABLE users (
@@ -39,6 +39,19 @@ CREATE_MIGRATIONS = """
     CREATE TABLE schema_migrations (
         version INTEGER PRIMARY KEY CHECK (version > 0),
         applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+"""
+
+CREATE_PAYMENTS = """
+    CREATE TABLE payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        currency TEXT NOT NULL,
+        amount INTEGER NOT NULL CHECK(amount > 0),
+        invoice_payload TEXT NOT NULL,
+        telegram_payment_charge_id TEXT NOT NULL UNIQUE,
+        provider_payment_charge_id TEXT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
 """
 
@@ -70,12 +83,31 @@ def _version(conn):
     )]
     if any(version > SCHEMA_VERSION for version in versions):
         raise RuntimeError('Database version is newer than this application supports')
-    if versions not in ([], [1]):
+    if versions not in ([], [1], [1, 2]):
         raise RuntimeError('Unexpected migration history')
     return versions[-1] if versions else 0
 
 
 def _check_schema(conn, version):
+    if version == 2:
+        _check_schema(conn, 1)
+        _check_table(conn, 'payments', [
+            ('id', 'INTEGER', 0, 1), ('user_id', 'INTEGER', 1, 0),
+            ('currency', 'TEXT', 1, 0), ('amount', 'INTEGER', 1, 0),
+            ('invoice_payload', 'TEXT', 1, 0),
+            ('telegram_payment_charge_id', 'TEXT', 1, 0),
+            ('provider_payment_charge_id', 'TEXT', 0, 0),
+            ('created_at', 'TEXT', 1, 0),
+        ])
+        # Read-only check of the exact DDL, including UNIQUE and CHECK constraints.
+        ddl = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'payments'"
+        ).fetchone()[0]
+        if ''.join(ddl.lower().split()) != ''.join(CREATE_PAYMENTS.lower().split()):
+            raise RuntimeError('Unexpected constraints for payments')
+        return
+    if version not in (0, 1):
+        raise RuntimeError('Unsupported schema version')
     _check_table(conn, 'readings', [
         ('id', 'INTEGER', 0, 1), ('user_id', 'INTEGER', 0, 0),
         ('datetime', 'TEXT', 0, 0), ('systolic', 'INTEGER', 0, 0),
@@ -117,8 +149,55 @@ def check_database(database=None):
         _check_schema(conn, SCHEMA_VERSION)
 
 
+def _migrate_v0_to_v1(conn, *, initialize=False):
+    """Original foundation migration; caller owns the transaction."""
+    objects = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"
+    )}
+    if 'users' in objects or 'idx_readings_user_datetime' in objects:
+        raise RuntimeError('Unversioned foundation objects require review')
+    if initialize:
+        if objects - {'schema_migrations'}:
+            raise RuntimeError('Initialization requires an empty database')
+        conn.execute(create_readings_table)
+        conn.execute(create_user_settings_table)
+    _check_schema(conn, 0)
+    if conn.execute("""
+        SELECT 1 FROM readings
+        WHERE user_id IS NOT NULL AND typeof(user_id) != 'integer'
+        LIMIT 1
+    """).fetchone():
+        raise RuntimeError('Legacy readings contain non-integer user IDs')
+    if 'schema_migrations' not in objects:
+        conn.execute(CREATE_MIGRATIONS)
+    conn.execute(CREATE_USERS)
+    conn.execute("""
+        INSERT INTO users (user_id, language)
+        SELECT source.user_id, COALESCE(settings.language, 'UA')
+        FROM (
+            SELECT user_id FROM readings WHERE user_id IS NOT NULL
+            UNION
+            SELECT user_id FROM user_settings WHERE user_id IS NOT NULL
+        ) AS source
+        LEFT JOIN user_settings AS settings
+            ON settings.user_id = source.user_id
+    """)
+    conn.execute('CREATE INDEX idx_readings_user_datetime '
+                 'ON readings (user_id, datetime)')
+    _check_schema(conn, 1)
+    conn.execute('INSERT INTO schema_migrations (version) VALUES (1)')
+
+
+def _migrate_v1_to_v2(conn):
+    """Add receipts without changing users, settings, or readings."""
+    _check_schema(conn, 1)
+    conn.execute(CREATE_PAYMENTS)
+    _check_schema(conn, 2)
+    conn.execute('INSERT INTO schema_migrations (version) VALUES (2)')
+
+
 def init_db(database, *, initialize=False):
-    """Explicitly apply v1 to an existing database, or initialize an empty one."""
+    """Explicitly apply required migrations to the latest schema atomically."""
     with closing(_connect(database, 'rwc' if initialize else 'rw')) as conn:
         conn.isolation_level = None
         conn.execute('BEGIN IMMEDIATE')
@@ -128,41 +207,11 @@ def init_db(database, *, initialize=False):
                 _check_schema(conn, version)
                 conn.execute('COMMIT')
                 return
-            objects = {row[0] for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"
-            )}
-            if 'users' in objects or 'idx_readings_user_datetime' in objects:
-                raise RuntimeError('Unversioned foundation objects require review')
-            if initialize:
-                if objects - {'schema_migrations'}:
-                    raise RuntimeError('Initialization requires an empty database')
-                conn.execute(create_readings_table)
-                conn.execute(create_user_settings_table)
-            _check_schema(conn, 0)
-            if conn.execute("""
-                SELECT 1 FROM readings
-                WHERE user_id IS NOT NULL AND typeof(user_id) != 'integer'
-                LIMIT 1
-            """).fetchone():
-                raise RuntimeError('Legacy readings contain non-integer user IDs')
-            if 'schema_migrations' not in objects:
-                conn.execute(CREATE_MIGRATIONS)
-            conn.execute(CREATE_USERS)
-            conn.execute("""
-                INSERT INTO users (user_id, language)
-                SELECT source.user_id, COALESCE(settings.language, 'UA')
-                FROM (
-                    SELECT user_id FROM readings WHERE user_id IS NOT NULL
-                    UNION
-                    SELECT user_id FROM user_settings WHERE user_id IS NOT NULL
-                ) AS source
-                LEFT JOIN user_settings AS settings
-                    ON settings.user_id = source.user_id
-            """)
-            conn.execute('CREATE INDEX idx_readings_user_datetime '
-                         'ON readings (user_id, datetime)')
-            _check_schema(conn, 1)
-            conn.execute('INSERT INTO schema_migrations (version) VALUES (1)')
+            if version == 0:
+                _migrate_v0_to_v1(conn, initialize=initialize)
+                version = 1
+            if version == 1:
+                _migrate_v1_to_v2(conn)
             conn.execute('COMMIT')
         except Exception:
             try:
@@ -171,6 +220,41 @@ def init_db(database, *, initialize=False):
                 # SQLite may already have rolled back; retain the original error.
                 pass
             raise
+
+
+def record_payment(user_id, currency, amount, invoice_payload,
+                   telegram_payment_charge_id, provider_payment_charge_id=None):
+    """Return True for a new receipt, False for an identical retry; reject conflicts."""
+    from constants import SUPPORT_AMOUNTS
+
+    if type(user_id) is not int or not 0 < user_id <= 2**63 - 1:
+        raise ValueError('Invalid payment user_id')
+    if (currency != 'XTR' or type(amount) is not int
+            or amount not in SUPPORT_AMOUNTS
+            or invoice_payload != f'support:{amount}'):
+        raise ValueError('Invalid support payment')
+    if (not isinstance(telegram_payment_charge_id, str)
+            or not telegram_payment_charge_id.strip()):
+        raise ValueError('Missing Telegram charge ID')
+    if provider_payment_charge_id is not None and not isinstance(provider_payment_charge_id, str):
+        raise ValueError('Invalid provider charge ID')
+    with closing(_connect(DB_PATH)) as conn, conn:
+        cursor = conn.execute("""
+            INSERT INTO payments (user_id, currency, amount, invoice_payload,
+                                  telegram_payment_charge_id, provider_payment_charge_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(telegram_payment_charge_id) DO NOTHING
+        """, (user_id, currency, amount, invoice_payload,
+              telegram_payment_charge_id, provider_payment_charge_id))
+        if cursor.rowcount == 1:
+            return True
+        existing = conn.execute("""
+            SELECT user_id, currency, amount, invoice_payload, provider_payment_charge_id
+            FROM payments WHERE telegram_payment_charge_id = ?
+        """, (telegram_payment_charge_id,)).fetchone()
+        if existing != (user_id, currency, amount, invoice_payload, provider_payment_charge_id):
+            raise ValueError('Conflicting data for an existing Telegram charge ID')
+        return False
 
 
 def _ensure_user(conn, user_id):
@@ -302,4 +386,4 @@ if __name__ == '__main__':
         # Do not print database values that might appear in an SQLite exception.
         parser.exit(1, 'Migration failed; database changes were rolled back. '
                        'Check schema compatibility, path, and database locks.\n')
-    print('Database schema is at version 1')
+    print(f'Database schema is at version {SCHEMA_VERSION}')

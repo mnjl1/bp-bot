@@ -1,4 +1,15 @@
 UA = {
+    'support_private': 'Підтримати бота можна лише в приватному чаті.',
+    'support_text': 'Добровільна підтримка розробки BP Bot. Бот залишається безкоштовним; підтримка не відкриває додаткових функцій. Прочитайте /terms. Натискаючи кнопку нижче, ви підтверджуєте, що прочитали умови та погоджуєтеся з ними. Допомога з оплатою: /paysupport.',
+    'support_agree': '✅ Погоджуюсь з умовами',
+    'support_choose': 'Дякуємо за згоду з умовами. Оберіть суму добровільної підтримки:',
+    'support_title': 'Підтримка BP Bot',
+    'support_description': 'Добровільна підтримка розробки безкоштовного бота без додаткових функцій.',
+    'support_invalid': 'Некоректний платіж. Спробуйте знову через /support.',
+    'support_thanks': 'Дякуємо за підтримку розробки BP Bot! Бот залишається безкоштовним для всіх.',
+    'payment_contact': 'Допомога з оплатою: {contact}',
+    'payment_contact_pending': 'Контакт для допомоги з оплатою налаштовується. Спробуйте /paysupport пізніше.',
+    'support_terms': 'Підтримка через Stars є добровільною. Вона не відкриває Premium чи додаткових функцій; BP Bot залишається безкоштовним. Платіж обробляється через Telegram Stars. З питань оплати звертайтеся через /paysupport. Telegram не відповідає за вирішення питань щодо покупок через бота.',
     'note_too_long': 'Вимір не збережено. Примітка має містити не більше {limit} символів.',
     'report_private': 'Звіт доступний лише в приватному чаті з ботом.',
     'report_title': 'Безкоштовний звіт: {start} – {end}',
@@ -41,6 +52,9 @@ UA = {
 
                   /start - Вітальне повідомлення
                   /help - Показати цю довідку
+                  /support - Добровільна підтримка бота
+                  /paysupport - Допомога з оплатою
+                  /terms - Умови підтримки
                   /report - Безкоштовний звіт за 30 днів
                   /last - Останні 5 вимірів
                   /avg - Середнє за 7 днів
@@ -53,6 +67,17 @@ UA = {
 }
 
 EN = {
+    'support_private': 'Support is available only in a private chat with the bot.',
+    'support_text': 'Voluntary support for BP Bot development. The bot remains free; support does not unlock features. Please read /terms. By pressing the button below, you confirm that you have read and agree to the terms. Payment help: /paysupport.',
+    'support_agree': '✅ I agree to the terms',
+    'support_choose': 'Thank you for agreeing to the terms. Choose a voluntary support amount:',
+    'support_title': 'Support BP Bot',
+    'support_description': 'Voluntary support for development of the free bot, with no additional features.',
+    'support_invalid': 'Invalid payment. Please try again using /support.',
+    'support_thanks': 'Thank you for supporting BP Bot development! The bot remains free for everyone.',
+    'payment_contact': 'Payment support: {contact}',
+    'payment_contact_pending': 'The payment support contact is being configured. Please try /paysupport again later.',
+    'support_terms': 'Stars support is voluntary. It unlocks no Premium or features; BP Bot remains free. Payment is processed through Telegram Stars. For payment issues, use /paysupport. Telegram is not responsible for resolving purchases made via the bot.',
     'note_too_long': 'Reading not saved. Notes must be no longer than {limit} characters.',
     'report_private': 'Reports are available only in a private chat with the bot.',
     'report_title': 'Free report: {start} – {end}',
@@ -93,6 +118,9 @@ EN = {
 
                       /start - Welcome message
                       /help - Show this help
+                      /support - Voluntary bot support
+                      /paysupport - Payment support
+                      /terms - Support terms
                       /report - Free 30-day report
                       /last - Last 5 readings
                       /avg - 7-day average

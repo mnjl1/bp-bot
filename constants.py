@@ -19,3 +19,8 @@ limits = {
 MAX_NOTE_LENGTH = 120
 REPORT_NOTE_COLUMN_WIDTH = 24
 REPORT_MESSAGE_LIMIT = 3500
+
+SUPPORT_AMOUNTS = (25, 50, 100)
+SUPPORT_CALLBACK_PATTERN = r'\Asupport:(25|50|100)\Z'
+# Mandatory before production: configure a real public payment-support contact.
+PAYMENT_SUPPORT_CONTACT = None

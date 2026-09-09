@@ -159,7 +159,7 @@ class DatabaseFoundationTests(unittest.TestCase):
     def test_fresh_and_repeat(self):
         self.fresh()
         db.check_database()
-        self.assertEqual(self.conn.execute('SELECT version FROM schema_migrations').fetchall(), [(1,)])
+        self.assertEqual(self.conn.execute('SELECT version FROM schema_migrations').fetchall(), [(1,), (2,)])
         self.assertEqual(self.conn.execute('SELECT * FROM users').fetchall(), [])
         before = self.snapshot()
         db.init_db(self.path)
@@ -290,7 +290,7 @@ class DatabaseFoundationTests(unittest.TestCase):
 
     def test_newer_version_is_rejected_without_changes(self):
         self.fresh()
-        self.conn.execute('INSERT INTO schema_migrations (version) VALUES (2)')
+        self.conn.execute('INSERT INTO schema_migrations (version) VALUES (3)')
         self.conn.commit()
         before = self.snapshot()
         for operation in (db.init_db, db.check_database):
