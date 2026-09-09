@@ -3,3 +3,5 @@ venv/
 *.db
 __pycache__/
 TODO.md
+.env.*
+bp.db.backup-*
