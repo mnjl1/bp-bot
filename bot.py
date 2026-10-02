@@ -12,7 +12,7 @@ from utils import get_report_date_range, format_report
 from messages import get_text
 from admin import show_admin_stats
 from constants import (READING_PATTERN, MAX_NOTE_LENGTH, SUPPORT_AMOUNTS,
-                       SUPPORT_CALLBACK_PATTERN, PAYMENT_SUPPORT_CONTACT)
+                       SUPPORT_CALLBACK_PATTERN)
 
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,11 @@ def setup_logging():
 
 
 async def error_handler(update, context):
+    if (update is not None and update.message is not None
+            and update.message.successful_payment is not None):
+        # Payment exceptions may contain identifiers; never format their details.
+        logger.error('Unhandled error while processing a successful Telegram payment')
+        return
     logger.error(
         'Unhandled exception while processing a Telegram update',
         exc_info=context.error,
@@ -206,16 +211,21 @@ async def successful_support_payment(update, context):
         return
     if update.effective_user is None:
         return
-    record_payment(update.effective_user.id, payment.currency, payment.total_amount,
-                   payment.invoice_payload, payment.telegram_payment_charge_id,
-                   payment.provider_payment_charge_id)
+    try:
+        record_payment(update.effective_user.id, payment.currency, payment.total_amount,
+                       payment.invoice_payload, payment.telegram_payment_charge_id,
+                       payment.provider_payment_charge_id)
+    except Exception:
+        logger.error('Successful Telegram payment could not be persisted')
+        return
     lang = get_user_language(update.effective_user.id)
     await message.reply_text(get_text(lang, 'support_thanks'))
 
 
 async def paysupport(update, context):
     lang = get_user_language(update.effective_user.id)
-    contact = (PAYMENT_SUPPORT_CONTACT or '').strip()
+    # Mandatory before production: configure a real public contact in the environment.
+    contact = os.environ.get('PAYMENT_SUPPORT_CONTACT', '').strip()
     text = (get_text(lang, 'payment_contact').format(contact=contact)
             if contact else get_text(lang, 'payment_contact_pending'))
     await update.message.reply_text(text)

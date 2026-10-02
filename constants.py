@@ -22,5 +22,3 @@ REPORT_MESSAGE_LIMIT = 3500
 
 SUPPORT_AMOUNTS = (25, 50, 100)
 SUPPORT_CALLBACK_PATTERN = r'\Asupport:(25|50|100)\Z'
-# Mandatory before production: configure a real public payment-support contact.
-PAYMENT_SUPPORT_CONTACT = None

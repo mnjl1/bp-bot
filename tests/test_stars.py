@@ -1,5 +1,6 @@
 import ast
 import logging
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -126,11 +127,11 @@ class StarsHandlerTests(unittest.IsolatedAsyncioTestCase):
         source = Path(__file__).resolve().parents[1] / 'bot.py'
         self.tree = ast.parse(source.read_text())
         names = {'valid_support_payment', 'support', 'support_agree', 'support_callback', 'support_precheckout',
-                 'successful_support_payment', 'paysupport', 'terms', 'help', 'post_init'}
+                 'successful_support_payment', 'paysupport', 'terms', 'help', 'post_init', 'error_handler'}
         nodes = [n for n in self.tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names]
         self.ns = dict(get_text=get_text, get_user_language=Mock(return_value='UA'),
                        record_payment=Mock(return_value=True), SUPPORT_AMOUNTS=SUPPORT_AMOUNTS,
-                       PAYMENT_SUPPORT_CONTACT=None, logger=logging.getLogger('stars-test'),
+                       os=os, logger=logging.getLogger('stars-test'),
                        InlineKeyboardButton=InlineKeyboardButton, InlineKeyboardMarkup=InlineKeyboardMarkup,
                        LabeledPrice=LabeledPrice, BotCommand=BotCommand)
         exec(compile(ast.Module(body=nodes, type_ignores=[]), str(source), 'exec'), self.ns)
@@ -242,8 +243,10 @@ class StarsHandlerTests(unittest.IsolatedAsyncioTestCase):
                     self.message.reply_text.assert_awaited_with(get_text(lang, 'support_thanks'))
                 self.message.successful_payment.provider_payment_charge_id = 'conflict'
                 self.message.reply_text.reset_mock()
-                with self.assertRaises(ValueError):
+                with self.assertLogs('stars-test', level='ERROR') as logs:
                     await self.ns['successful_support_payment'](self.update, self.context)
+                self.assertEqual([r.getMessage() for r in logs.records], [
+                    'Successful Telegram payment could not be persisted'])
                 self.message.reply_text.assert_not_called()
             with sqlite3.connect(path) as conn:
                 self.assertEqual(conn.execute('SELECT user_id,currency,amount,invoice_payload,telegram_payment_charge_id,provider_payment_charge_id FROM payments').fetchall(),
@@ -264,17 +267,23 @@ class StarsHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.message.successful_payment = NS(currency='XTR', total_amount=25,
             invoice_payload='support:25', telegram_payment_charge_id='test', provider_payment_charge_id='')
         self.ns['record_payment'].side_effect = sqlite3.OperationalError('synthetic failure')
-        with self.assertRaises(sqlite3.OperationalError):
-            await self.ns['successful_support_payment'](self.update, self.context)
+        with self.assertLogs('stars-test', level='ERROR') as logs:
+            result = await self.ns['successful_support_payment'](self.update, self.context)
+        self.assertIsNone(result)
+        self.assertEqual([r.getMessage() for r in logs.records], [
+            'Successful Telegram payment could not be persisted'])
+        self.assertEqual(logs.records[0].levelno, logging.ERROR)
+        self.assertTrue(all(r.exc_info is None for r in logs.records))
         self.message.reply_text.assert_not_called()
 
     async def test_paysupport_terms_help_and_menu(self):
         for lang in ('UA', 'EN'):
             self.ns['get_user_language'].return_value = lang
-            for contact in (None, '', '  ', 'test-only contact'):
-                self.ns['PAYMENT_SUPPORT_CONTACT'] = contact
-                await self.ns['paysupport'](self.update, self.context)
-                expected = get_text(lang, 'payment_contact').format(contact=contact) if contact and contact.strip() else get_text(lang, 'payment_contact_pending')
+            for contact in (None, '', '  ', '  test-only contact  '):
+                environment = {} if contact is None else {'PAYMENT_SUPPORT_CONTACT': contact}
+                with patch.dict(os.environ, environment, clear=True):
+                    await self.ns['paysupport'](self.update, self.context)
+                expected = get_text(lang, 'payment_contact').format(contact=contact.strip()) if contact and contact.strip() else get_text(lang, 'payment_contact_pending')
                 self.message.reply_text.assert_awaited_with(expected)
             await self.ns['terms'](self.update, self.context)
             self.message.reply_text.assert_awaited_with(get_text(lang, 'support_terms'))

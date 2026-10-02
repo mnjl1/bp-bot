@@ -257,6 +257,14 @@ def record_payment(user_id, currency, amount, invoice_payload,
         return False
 
 
+def get_payment_charge_ids(database):
+    """Read receipt IDs from an explicitly selected existing database only."""
+    with closing(_connect(database, 'ro')) as conn:
+        return {row[0] for row in conn.execute(
+            'SELECT telegram_payment_charge_id FROM payments'
+        )}
+
+
 def _ensure_user(conn, user_id):
     if user_id is None:
         raise ValueError('user_id must not be None')
