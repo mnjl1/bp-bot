@@ -1,9 +1,10 @@
 import logging
 import os
 from dotenv import load_dotenv
+from telegram.error import TelegramError
 from telegram.ext import (Application, CommandHandler, MessageHandler, filters,
                           CallbackQueryHandler, PreCheckoutQueryHandler)
-from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
+from telegram import Update, BotCommand, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
 from db import (add_reading, get_last, get_avg, get_user_language,
                 set_user_language, ensure_user, check_database, get_readings_by_date_range,
                 record_payment)
@@ -43,10 +44,25 @@ async def error_handler(update, context):
 BOT_TOKEN = os.environ['BOT_TOKEN']
 
 
+def get_commands(lang):
+    return [BotCommand(name, get_text(lang, f'command_{name}'))
+            for name in ('start', 'help', 'last', 'avg', 'report', 'support', 'paysupport', 'terms')]
+
+
+async def set_chat_commands(update, context, lang):
+    try:
+        await context.bot.set_my_commands(
+            get_commands(lang), scope=BotCommandScopeChat(chat_id=update.effective_chat.id))
+    except TelegramError:
+        # Menu updates are secondary; keep confirmations and welcomes working.
+        logger.warning('Could not update Telegram command menu')
+
+
 async def start(update, context):
     user_id = update.effective_user.id
     ensure_user(user_id)
     lang = get_user_language(user_id=user_id)
+    await set_chat_commands(update, context, lang)
     welcome = get_text(lang=lang, key='welcome_detailed')
     await update.message.reply_text(welcome)
 
@@ -239,26 +255,19 @@ async def terms(update, context):
 async def set_english(update, context):
     user_id = update.effective_user.id
     set_user_language(user_id=user_id, language='EN')
+    await set_chat_commands(update, context, 'EN')
     await update.message.reply_text('English is set')
 
 
 async def set_ukrainian(update, context):
     user_id = update.effective_user.id
     set_user_language(user_id=user_id, language='UA')
+    await set_chat_commands(update, context, 'UA')
     await update.message.reply_text('Українська мова встановлена')
 
 
 async def post_init(application):
-    await application.bot.set_my_commands([
-        BotCommand('start', 'Welcome message and instructions'),
-        BotCommand('help', 'Show all commands'),
-        BotCommand('last', 'Show 5 last records'),
-        BotCommand('avg', 'Show average for last 7 days'),
-        BotCommand('report', 'Free report for the last 30 days'),
-        BotCommand('support', 'Voluntary support for the free bot'),
-        BotCommand('paysupport', 'Payment support'),
-        BotCommand('terms', 'Stars support terms')
-    ])
+    await application.bot.set_my_commands(get_commands('EN'))
 
 
 if __name__ == '__main__':

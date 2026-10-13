@@ -127,7 +127,7 @@ class StarsHandlerTests(unittest.IsolatedAsyncioTestCase):
         source = Path(__file__).resolve().parents[1] / 'bot.py'
         self.tree = ast.parse(source.read_text())
         names = {'valid_support_payment', 'support', 'support_agree', 'support_callback', 'support_precheckout',
-                 'successful_support_payment', 'paysupport', 'terms', 'help', 'post_init', 'error_handler'}
+                 'successful_support_payment', 'paysupport', 'terms', 'help', 'post_init', 'get_commands', 'error_handler'}
         nodes = [n for n in self.tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names]
         self.ns = dict(get_text=get_text, get_user_language=Mock(return_value='UA'),
                        record_payment=Mock(return_value=True), SUPPORT_AMOUNTS=SUPPORT_AMOUNTS,

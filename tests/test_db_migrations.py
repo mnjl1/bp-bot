@@ -344,7 +344,7 @@ class DatabaseFoundationTests(unittest.TestCase):
         from unittest.mock import AsyncMock
         self.fresh()
         namespace = {'ensure_user': db.ensure_user, 'get_user_language': db.get_user_language,
-                     'get_text': lambda **kwargs: 'welcome'}
+                     'get_text': lambda **kwargs: 'welcome', 'set_chat_commands': AsyncMock()}
         exec(compile(ast.Module(body=[start], type_ignores=[]), '<start handler>', 'exec'), namespace)
         update = SimpleNamespace(effective_user=SimpleNamespace(id=42),
                                  message=SimpleNamespace(reply_text=AsyncMock()))

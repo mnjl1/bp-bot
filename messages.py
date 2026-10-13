@@ -1,4 +1,12 @@
 UA = {
+    'command_start': 'Почати',
+    'command_help': 'Допомога',
+    'command_last': 'Останні 5 вимірів',
+    'command_avg': 'Середнє за 7 днів',
+    'command_report': 'Звіт за 30 днів',
+    'command_support': 'Підтримати бота',
+    'command_paysupport': 'Допомога з оплатою',
+    'command_terms': 'Умови підтримки',
     'support_private': 'Підтримати бота можна лише в приватному чаті.',
     'support_text': 'Добровільна підтримка розробки BP Bot. Бот залишається безкоштовним; підтримка не відкриває додаткових функцій. Прочитайте /terms. Натискаючи кнопку нижче, ви підтверджуєте, що прочитали умови та погоджуєтеся з ними. Допомога з оплатою: /paysupport.',
     'support_agree': '✅ Погоджуюсь з умовами',
@@ -67,6 +75,14 @@ UA = {
 }
 
 EN = {
+    'command_start': 'Start',
+    'command_help': 'Help',
+    'command_last': 'Last 5 readings',
+    'command_avg': '7-day average',
+    'command_report': '30-day report',
+    'command_support': 'Support the bot',
+    'command_paysupport': 'Payment support',
+    'command_terms': 'Support terms',
     'support_private': 'Support is available only in a private chat with the bot.',
     'support_text': 'Voluntary support for BP Bot development. The bot remains free; support does not unlock features. Please read /terms. By pressing the button below, you confirm that you have read and agree to the terms. Payment help: /paysupport.',
     'support_agree': '✅ I agree to the terms',
