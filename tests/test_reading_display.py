@@ -1,9 +1,13 @@
 import ast
 import re
+import sqlite3
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
+
+import db
 
 from messages import get_text
 from constants import MAX_NOTE_LENGTH, READING_PATTERN
@@ -137,6 +141,33 @@ class ReadingDisplayTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('120 символів' if lang == 'UA' else '120 characters',
                           get_text(lang, 'help_text'))
 
+    async def test_last_empty_localized(self):
+        for lang, expected in (
+            ('UA', 'Ще немає збережених вимірів. Надішліть показники, наприклад: 120/80/72.'),
+            ('EN', 'No readings saved yet. Send a reading, for example: 120/80/72.'),
+        ):
+            with self.subTest(lang=lang):
+                self.namespace['get_user_language'].return_value = lang
+                self.namespace['get_last'].return_value = []
+                self.update.message.reply_text.reset_mock()
+                await self.namespace['show_last_readings'](self.update, None)
+                self.update.message.reply_text.assert_awaited_once_with(expected)
+                self.namespace['get_last'].assert_called_with(user_id=42)
+
+    async def test_avg_empty_localized(self):
+        for lang, expected in (
+            ('UA', 'За останні 7 днів немає вимірів. Надішліть показники, наприклад: 120/80/72.'),
+            ('EN', 'No readings in the last 7 days. Send a reading, for example: 120/80/72.'),
+        ):
+            for data in ([(None, None, None)], [], [(120, None, None)], [(None, 80, None)]):
+                with self.subTest(lang=lang, data=data):
+                    self.namespace['get_user_language'].return_value = lang
+                    self.namespace['get_avg'].return_value = data
+                    self.update.message.reply_text.reset_mock()
+                    await self.namespace['show_avg'](self.update, None)
+                    self.update.message.reply_text.assert_awaited_once_with(expected)
+                    self.namespace['get_avg'].assert_called_with(user_id=42)
+
     async def check_last(self, pulse):
         for lang, period, label in [('UA', 'Ранок', 'пульс:'),
                                     ('EN', 'Morning', 'pulse:')]:
@@ -202,6 +233,23 @@ class ReadingDisplayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_avg_without_pulse(self):
         await self.check_avg(None)
+
+
+class EmptyReadingQueryTests(unittest.TestCase):
+    def test_empty_and_old_readings_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'readings.sqlite'
+            with sqlite3.connect(path) as conn:
+                conn.execute(db.create_readings_table)
+            with patch.object(db, 'DB_PATH', path):
+                self.assertEqual(db.get_last(42), [])
+                self.assertEqual(db.get_avg(42), [(None, None, None)])
+                with sqlite3.connect(path) as conn:
+                    conn.execute(
+                        "INSERT INTO readings (user_id, datetime, systolic, diastolic) "
+                        "VALUES (42, '2000-01-01 00:00:00', 120, 80)")
+                self.assertEqual(len(db.get_last(42)), 1)
+                self.assertEqual(db.get_avg(42), [(None, None, None)])
 
 
 if __name__ == '__main__':

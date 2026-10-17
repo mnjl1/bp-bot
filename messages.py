@@ -1,4 +1,6 @@
 UA = {
+    'last_empty': 'Ще немає збережених вимірів. Надішліть показники, наприклад: 120/80/72.',
+    'avg_empty': 'За останні 7 днів немає вимірів. Надішліть показники, наприклад: 120/80/72.',
     'command_start': 'Почати',
     'command_help': 'Допомога',
     'command_last': 'Останні 5 вимірів',
@@ -75,6 +77,8 @@ UA = {
 }
 
 EN = {
+    'last_empty': 'No readings saved yet. Send a reading, for example: 120/80/72.',
+    'avg_empty': 'No readings in the last 7 days. Send a reading, for example: 120/80/72.',
     'command_start': 'Start',
     'command_help': 'Help',
     'command_last': 'Last 5 readings',

@@ -111,6 +111,9 @@ async def show_last_readings(update, context):
     user_id = update.effective_user.id
     lang = get_user_language(user_id=user_id)
     records = get_last(user_id=user_id)
+    if not records:
+        await update.message.reply_text(get_text(lang, 'last_empty'))
+        return
     report = """"""
 
     for record in records:
@@ -131,6 +134,9 @@ async def show_avg(update, context):
     lang = get_user_language(user_id=user_id)
     user_id = update.effective_user.id
     data = get_avg(user_id=user_id)
+    if not data or data[0][0] is None or data[0][1] is None:
+        await update.message.reply_text(get_text(lang, 'avg_empty'))
+        return
     avr_systolic = data[0][0]
     avr_diastolic = data[0][1]
     avr_pulse = data[0][2]
