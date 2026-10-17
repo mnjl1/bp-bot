@@ -1,5 +1,6 @@
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from html import escape
 from textwrap import wrap
 from messages import UA, EN, get_text
@@ -7,17 +8,25 @@ from constants import (MORNING_END, MIDDAY_END, limits,
                        REPORT_NOTE_COLUMN_WIDTH, REPORT_MESSAGE_LIMIT)
 
 
-def get_period_of_day(date, lang):
-    date_obj = datetime.strptime(date, '%Y-%m-%d %H:%M:%S')
-    hour = date_obj.hour
-    day_time = ''
-    if hour < MORNING_END:
-        day_time = get_text(lang, 'morning')
-    elif hour >=MORNING_END and hour < MIDDAY_END:
-        day_time = get_text(lang, 'midday')
-    else: day_time = get_text(lang, 'evening')
+def local_datetime(timestamp, zone=None):
+    """Stored naive strings are UTC, never the host's local timezone."""
+    instant = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+    return instant.astimezone(ZoneInfo(zone)) if zone else instant
 
-    return day_time
+
+def effective_timezone(record, user_timezone):
+    return record[7] or user_timezone
+
+
+def get_period_of_day(date, lang, zone=None):
+    if not zone:
+        return get_text(lang, 'time_neutral')
+    hour = local_datetime(date, zone).hour
+    if hour < MORNING_END:
+        return get_text(lang, 'morning')
+    if hour < MIDDAY_END:
+        return get_text(lang, 'midday')
+    return get_text(lang, 'evening')
 
 
 def validate_reading(systolic, diastolic, pulse):
@@ -60,17 +69,29 @@ def process_user_input(text):
     return ({'systolic': systolic, 'diastolic': diastolic, 'pulse': pulse}, note)
 
 
-def convert_date(date):
-    date_obj = datetime.strptime(date, '%Y-%m-%d %H:%M:%S')
-    return date_obj.strftime('%d/%m/%y')
+def convert_date(date, zone=None):
+    return local_datetime(date, zone).strftime('%d/%m/%y')
 
 
-def get_report_date_range(today=None):
-    """Thirty calendar days, using the existing server calendar convention."""
-    today = today if today is not None else datetime.now().date()
+def get_report_date_range(today=None, *, user_timezone=None, now=None):
+    """30 local calendar days; unset zone uses UTC dates with a UI explanation."""
+    if today is None:
+        now = now if now is not None else datetime.now(timezone.utc)
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError('Report timestamp must be timezone-aware')
+        zone = ZoneInfo(user_timezone) if user_timezone else timezone.utc
+        today = now.astimezone(zone).date()
     start = today - timedelta(days=29)
     end = today + timedelta(days=1)
     return start.strftime('%Y-%m-%d 00:00:00'), end.strftime('%Y-%m-%d 00:00:00')
+
+
+def get_report_candidate_range(start, end):
+    # All IANA offsets are smaller than 24 hours. Pad both sides, then filter
+    # by each row's displayed date (which may use a historical timezone).
+    start = datetime.strptime(start, '%Y-%m-%d %H:%M:%S') - timedelta(days=1)
+    end = datetime.strptime(end, '%Y-%m-%d %H:%M:%S') + timedelta(days=1)
+    return start.strftime('%Y-%m-%d %H:%M:%S'), end.strftime('%Y-%m-%d %H:%M:%S')
 
 
 def _report_size(text):
@@ -78,19 +99,24 @@ def _report_size(text):
     return len(text.encode('utf-16-le')) // 2
 
 
-def format_report(records, start_timestamp, end_timestamp, lang):
+def format_report(records, start_timestamp, end_timestamp, lang, user_timezone=None):
     """Build HTML messages; averages and full notes use the same displayed rows."""
     start = datetime.strptime(start_timestamp, '%Y-%m-%d %H:%M:%S')
     end = datetime.strptime(end_timestamp, '%Y-%m-%d %H:%M:%S') - timedelta(days=1)
     title = get_text(lang, 'report_title').format(
         start=start.strftime('%d.%m.%Y'), end=end.strftime('%d.%m.%Y'))
+    neutral = not user_timezone
     rows = []
     valid = []
     skipped = False
     for record in records:
-        _, _, timestamp, systolic, diastolic, pulse, note = record
+        _, _, timestamp, systolic, diastolic, pulse, note, _ = record
         try:
-            date = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+            zone = effective_timezone(record, user_timezone)
+            date = local_datetime(timestamp, zone)
+            if not start.date() <= date.date() <= end.date():
+                continue
+            neutral = neutral or not zone
             values = (systolic, diastolic) + (() if pulse is None else (pulse,))
             if any(type(value) is not int for value in values):
                 raise ValueError('Invalid reading values')
@@ -101,11 +127,13 @@ def format_report(records, start_timestamp, end_timestamp, lang):
         except (TypeError, ValueError):
             skipped = True
             continue
-        date_period = date.strftime('%d.%m.%y') + ' ' + get_period_of_day(timestamp, lang)
+        date_period = date.strftime('%d.%m.%y') + ' ' + get_period_of_day(timestamp, lang, zone)
         rows.append((date_period, str(systolic), str(diastolic),
                      '—' if pulse is None else str(pulse),
                      note if note and note.strip() else '—'))
         valid.append((systolic, diastolic, pulse))
+    if neutral:
+        title += '\n' + get_text(lang, 'timezone_neutral_notice')
     warning = get_text(lang, 'report_invalid') if skipped else ''
     if not rows:
         return [escape('\n'.join(filter(None, (

@@ -13,12 +13,12 @@ import db
 from messages import get_text
 
 
-COMMANDS = ['start', 'help', 'last', 'avg', 'report', 'support', 'paysupport', 'terms']
+COMMANDS = ['start', 'help', 'last', 'avg', 'report', 'support', 'paysupport', 'terms', 'timezone']
 DESCRIPTIONS = {
     'UA': ['Почати', 'Допомога', 'Останні 5 вимірів', 'Середнє за 7 днів',
-           'Звіт за 30 днів', 'Підтримати бота', 'Допомога з оплатою', 'Умови підтримки'],
+           'Звіт за 30 днів', 'Підтримати бота', 'Допомога з оплатою', 'Умови підтримки', 'Налаштувати місцевий час'],
     'EN': ['Start', 'Help', 'Last 5 readings', '7-day average',
-           '30-day report', 'Support the bot', 'Payment support', 'Support terms'],
+           '30-day report', 'Support the bot', 'Payment support', 'Support terms', 'Set local time'],
 }
 
 
@@ -36,7 +36,8 @@ class CommandMenuTests(unittest.IsolatedAsyncioTestCase):
                        TelegramError=TelegramError, logger=logging.getLogger('command-menu-test'),
                        get_text=get_text, ensure_user=db.ensure_user,
                        get_user_language=db.get_user_language,
-                       set_user_language=db.set_user_language)
+                       set_user_language=db.set_user_language,
+                       get_user_timezone=db.get_user_timezone, show_timezone=AsyncMock())
         exec(compile(ast.Module(body=nodes, type_ignores=[]), str(source), 'exec'), self.ns)
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)

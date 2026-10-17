@@ -7,13 +7,14 @@ from telegram.ext import (Application, CommandHandler, MessageHandler, filters,
 from telegram import Update, BotCommand, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
 from db import (add_reading, get_last, get_avg, get_user_language,
                 set_user_language, ensure_user, check_database, get_readings_by_date_range,
-                record_payment)
+                record_payment, get_user_timezone, set_user_timezone)
 from utils import get_period_of_day, validate_reading, process_user_input, convert_date
-from utils import get_report_date_range, format_report
+from utils import (get_report_date_range, get_report_candidate_range, format_report,
+                   effective_timezone)
 from messages import get_text
 from admin import show_admin_stats
 from constants import (READING_PATTERN, MAX_NOTE_LENGTH, SUPPORT_AMOUNTS,
-                       SUPPORT_CALLBACK_PATTERN)
+                       SUPPORT_CALLBACK_PATTERN, TIMEZONE_REGIONS, TIMEZONE_CALLBACK_PATTERN)
 
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,7 @@ BOT_TOKEN = os.environ['BOT_TOKEN']
 
 def get_commands(lang):
     return [BotCommand(name, get_text(lang, f'command_{name}'))
-            for name in ('start', 'help', 'last', 'avg', 'report', 'support', 'paysupport', 'terms')]
+            for name in ('start', 'help', 'last', 'avg', 'report', 'support', 'paysupport', 'terms', 'timezone')]
 
 
 async def set_chat_commands(update, context, lang):
@@ -65,6 +66,33 @@ async def start(update, context):
     await set_chat_commands(update, context, lang)
     welcome = get_text(lang=lang, key='welcome_detailed')
     await update.message.reply_text(welcome)
+    if get_user_timezone(user_id) is None:
+        await show_timezone(update, context)
+
+
+async def show_timezone(update, context):
+    lang = get_user_language(update.effective_user.id)
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(get_text(lang, 'timezone_' + region),
+                              callback_data='timezone:' + region)]
+        for region in (*TIMEZONE_REGIONS, 'other')
+    ])
+    await update.message.reply_text(get_text(lang, 'timezone_setup'), reply_markup=keyboard)
+
+
+async def timezone_callback(update, context):
+    query = update.callback_query
+    await query.answer()
+    if update.effective_user is None:
+        return
+    lang = get_user_language(update.effective_user.id)
+    region = query.data.removeprefix('timezone:') if isinstance(query.data, str) else ''
+    if query.data == 'timezone:other':
+        await query.edit_message_text(get_text(lang, 'timezone_other_message'))
+    elif region in TIMEZONE_REGIONS and query.data == 'timezone:' + region:
+        set_user_timezone(update.effective_user.id, TIMEZONE_REGIONS[region])
+        await query.edit_message_text(get_text(lang, 'timezone_saved').format(
+            region=get_text(lang, 'timezone_' + region)))
 
 
 async def help(update, context):
@@ -96,7 +124,7 @@ async def handle_reading(update, context):
 
     if validated_values:
         systolic, diastolic, pulse = validated_values
-        add_reading(user_id, systolic, diastolic, pulse, note)
+        add_reading(user_id, systolic, diastolic, pulse, note, measured_at=update.message.date)
         pulse_part = ''
         if pulse is not None:
             pulse_part = f",\n                                    {get_text(lang=lang, key='pulse')}{pulse}"
@@ -114,11 +142,15 @@ async def show_last_readings(update, context):
     if not records:
         await update.message.reply_text(get_text(lang, 'last_empty'))
         return
+    user_timezone = get_user_timezone(user_id)
+    neutral = False
     report = """"""
 
     for record in records:
-        date = convert_date(record[2])
-        part_of_the_day = get_period_of_day(date=record[2], lang=lang)
+        zone = effective_timezone(record, user_timezone)
+        neutral = neutral or not zone
+        date = convert_date(record[2], zone)
+        part_of_the_day = get_period_of_day(date=record[2], lang=lang, zone=zone)
         systolic = record[3]
         diastolic = record[4]
         pulse = record[5]
@@ -126,6 +158,8 @@ async def show_last_readings(update, context):
         pulse_part = f", {get_text(lang=lang, key='pulse')} {pulse}" if pulse is not None else ''
         report += f"{date} ({part_of_the_day}) {systolic}/{diastolic}{pulse_part} {note if note else ''}\n\n"
 
+    if neutral:
+        report += get_text(lang, 'timezone_neutral_notice')
     await update.message.reply_text(report)
 
 
@@ -154,9 +188,11 @@ async def show_report(update, context):
         return
     if user is None:
         return
-    start, end = get_report_date_range()
-    records = get_readings_by_date_range(user.id, start, end)
-    for message in format_report(records, start, end, lang):
+    zone = get_user_timezone(user.id)
+    start, end = get_report_date_range(user_timezone=zone)
+    candidate_start, candidate_end = get_report_candidate_range(start, end)
+    records = get_readings_by_date_range(user.id, candidate_start, candidate_end)
+    for message in format_report(records, start, end, lang, zone):
         await update.effective_message.reply_text(message, parse_mode='HTML')
 
 
@@ -288,6 +324,8 @@ if __name__ == '__main__':
     app.add_handler(CallbackQueryHandler(support_callback, pattern=SUPPORT_CALLBACK_PATTERN))
     app.add_handler(PreCheckoutQueryHandler(support_precheckout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_support_payment))
+    app.add_handler(CommandHandler('timezone', show_timezone))
+    app.add_handler(CallbackQueryHandler(timezone_callback, pattern=TIMEZONE_CALLBACK_PATTERN))
     app.add_handler(CommandHandler('start', start))
     app.add_handler(CommandHandler('help', help))
     app.add_handler(MessageHandler(filters.Regex(READING_PATTERN), handle_reading))

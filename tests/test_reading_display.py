@@ -1,4 +1,5 @@
 import ast
+from datetime import datetime, timezone
 import re
 import sqlite3
 import tempfile
@@ -11,7 +12,7 @@ import db
 
 from messages import get_text
 from constants import MAX_NOTE_LENGTH, READING_PATTERN
-from utils import convert_date, get_period_of_day, process_user_input, validate_reading
+from utils import effective_timezone, convert_date, get_period_of_day, process_user_input, validate_reading
 
 
 class ReadingDisplayTests(unittest.IsolatedAsyncioTestCase):
@@ -30,6 +31,8 @@ class ReadingDisplayTests(unittest.IsolatedAsyncioTestCase):
             'process_user_input': process_user_input,
             'validate_reading': validate_reading,
             'get_user_language': Mock(),
+            'get_user_timezone': Mock(return_value='UTC'),
+            'effective_timezone': effective_timezone,
             'add_reading': Mock(),
             'get_last': Mock(),
             'get_avg': Mock(),
@@ -38,7 +41,8 @@ class ReadingDisplayTests(unittest.IsolatedAsyncioTestCase):
              self.namespace)
         self.update = SimpleNamespace(
             effective_user=SimpleNamespace(id=42),
-            message=SimpleNamespace(text='', reply_text=AsyncMock()),
+            message=SimpleNamespace(text='', date=datetime(2026, 9, 6, 8, tzinfo=timezone.utc),
+                                    reply_text=AsyncMock()),
         )
 
     async def test_malformed_readings_are_rejected(self):
@@ -68,7 +72,7 @@ class ReadingDisplayTests(unittest.IsolatedAsyncioTestCase):
                         self.namespace['add_reading'].reset_mock()
                         self.update.message.text = token + (separator + note if note else '')
                         await self.namespace['handle_reading'](self.update, None)
-                        self.namespace['add_reading'].assert_called_once_with(42, 138, 88, pulse, note)
+                        self.namespace['add_reading'].assert_called_once_with(42, 138, 88, pulse, note, measured_at=self.update.message.date)
 
     async def test_slash_note_length_limit(self):
         for lang in ('UA', 'EN'):
@@ -80,7 +84,7 @@ class ReadingDisplayTests(unittest.IsolatedAsyncioTestCase):
                     self.update.message.text = token + '/' + note
                     await self.namespace['handle_reading'](self.update, None)
                     if length == 120:
-                        self.namespace['add_reading'].assert_called_once_with(42, 138, 88, pulse, note)
+                        self.namespace['add_reading'].assert_called_once_with(42, 138, 88, pulse, note, measured_at=self.update.message.date)
                     else:
                         self.namespace['add_reading'].assert_not_called()
                         self.update.message.reply_text.assert_awaited_with(
@@ -103,7 +107,7 @@ class ReadingDisplayTests(unittest.IsolatedAsyncioTestCase):
                 self.update.message.text = '120/80 ' + note
                 await self.namespace['handle_reading'](self.update, None)
                 if length == 120:
-                    self.namespace['add_reading'].assert_called_once_with(42, 120, 80, None, note)
+                    self.namespace['add_reading'].assert_called_once_with(42, 120, 80, None, note, measured_at=self.update.message.date)
                 else:
                     self.namespace['add_reading'].assert_not_called()
                     self.update.message.reply_text.assert_awaited_with(
@@ -123,7 +127,7 @@ class ReadingDisplayTests(unittest.IsolatedAsyncioTestCase):
                     self.update.message.text = '128/83/79 ' + note
                     await self.namespace['handle_reading'](self.update, None)
                     if length == 120:
-                        self.namespace['add_reading'].assert_called_once_with(42, 128, 83, 79, note)
+                        self.namespace['add_reading'].assert_called_once_with(42, 128, 83, 79, note, measured_at=self.update.message.date)
                     else:
                         self.namespace['add_reading'].assert_not_called()
                         self.update.message.reply_text.assert_awaited_with(
@@ -175,7 +179,7 @@ class ReadingDisplayTests(unittest.IsolatedAsyncioTestCase):
                 with self.subTest(lang=lang, pulse=pulse, note=note):
                     self.namespace['get_user_language'].return_value = lang
                     self.namespace['get_last'].return_value = [
-                        (1, 42, '2026-09-06 08:00:00', 129, 90, pulse, note),
+                        (1, 42, '2026-09-06 08:00:00', 129, 90, pulse, note, None),
                     ]
                     await self.namespace['show_last_readings'](self.update, None)
                     expected = '06/09/26 (' + period + ') 129/90'
@@ -208,7 +212,7 @@ class ReadingDisplayTests(unittest.IsolatedAsyncioTestCase):
                     expected += '\n' + ' ' * 36 + (note or '')
                     self.update.message.reply_text.assert_awaited_with(expected)
                     self.namespace['add_reading'].assert_called_with(
-                        42, 129, 90, pulse, note)
+                        42, 129, 90, pulse, note, measured_at=self.update.message.date)
 
     async def test_saved_with_pulse(self):
         await self.check_saved(79)

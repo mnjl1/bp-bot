@@ -1,4 +1,5 @@
 import ast
+from datetime import datetime, timezone
 import os
 import sqlite3
 import tempfile
@@ -80,7 +81,7 @@ class DatabaseFoundationTests(unittest.TestCase):
         before = self.snapshot()
         operations = (
             lambda: db.ensure_user(None),
-            lambda: db.add_reading(None, 120, 80),
+            lambda: db.add_reading(None, 120, 80, measured_at=datetime.now(timezone.utc)),
             lambda: db.set_user_language(None, 'EN'),
         )
         for operation in operations:
@@ -100,7 +101,7 @@ class DatabaseFoundationTests(unittest.TestCase):
                         db.init_db(path)
                     self.assertEqual(before, list(conn.iterdump()))
 
-    def test_v1_missing_or_wrong_timestamp_defaults_are_rejected(self):
+    def test_current_schema_missing_or_wrong_timestamp_defaults_are_rejected(self):
         for table, ddl in (('readings', LEGACY_READINGS), ('users', db.CREATE_USERS)):
             for index, default in enumerate(('', ' DEFAULT NULL', " DEFAULT 'CURRENT_TIMESTAMP'", ' DEFAULT CURRENT_DATE')):
                 with self.subTest(table=table, default=default):
@@ -110,12 +111,13 @@ class DatabaseFoundationTests(unittest.TestCase):
                         # Alter only synthetic, empty test databases.
                         conn.execute(f'DROP TABLE {table}')
                         conn.execute(ddl.replace(' DEFAULT CURRENT_TIMESTAMP', default))
+                        conn.execute(f'ALTER TABLE {table} ADD COLUMN timezone TEXT NULL')
                         if table == 'readings':
                             conn.execute('CREATE INDEX idx_readings_user_datetime ON readings(user_id, datetime)')
                         conn.commit()
                         before = list(conn.iterdump())
                         for operation in (db.check_database, db.init_db):
-                            with self.assertRaisesRegex(RuntimeError, table):
+                            with self.assertRaisesRegex(RuntimeError, table + r'\.'):
                                 operation(path)
                         self.assertEqual(before, list(conn.iterdump()))
 
@@ -159,7 +161,7 @@ class DatabaseFoundationTests(unittest.TestCase):
     def test_fresh_and_repeat(self):
         self.fresh()
         db.check_database()
-        self.assertEqual(self.conn.execute('SELECT version FROM schema_migrations').fetchall(), [(1,), (2,)])
+        self.assertEqual(self.conn.execute('SELECT version FROM schema_migrations').fetchall(), [(1,), (2,), (3,)])
         self.assertEqual(self.conn.execute('SELECT * FROM users').fetchall(), [])
         before = self.snapshot()
         db.init_db(self.path)
@@ -175,7 +177,6 @@ class DatabaseFoundationTests(unittest.TestCase):
         self.conn.commit()
         readings = self.conn.execute('SELECT * FROM readings').fetchall()
         settings = self.conn.execute('SELECT * FROM user_settings').fetchall()
-        structure = self.conn.execute("SELECT sql FROM sqlite_master WHERE name = 'readings'").fetchone()
         before = self.conn.execute('SELECT CURRENT_TIMESTAMP').fetchone()[0]
         db.init_db(self.path)
         after = self.conn.execute('SELECT CURRENT_TIMESTAMP').fetchone()[0]
@@ -183,10 +184,10 @@ class DatabaseFoundationTests(unittest.TestCase):
                          [(1, 'EN'), (2, 'UA'), (3, 'UA'), (4, 'UA'), (5, 'legacy'), (2**50, 'UA')])
         for (created,) in self.conn.execute('SELECT created_at FROM users'):
             self.assertTrue(before <= created <= after)
-        self.assertEqual(readings, self.conn.execute('SELECT * FROM readings').fetchall())
+        self.assertEqual([row + (None,) for row in readings], self.conn.execute('SELECT * FROM readings').fetchall())
         self.assertEqual(settings, self.conn.execute('SELECT * FROM user_settings').fetchall())
-        self.assertEqual(structure, self.conn.execute("SELECT sql FROM sqlite_master WHERE name = 'readings'").fetchone())
-        self.assertEqual(db.get_last(1), sorted(readings[:2], key=lambda row: row[2] or '', reverse=True))
+        self.assertTrue(all(row[-1] is None for row in self.conn.execute('SELECT * FROM readings')))
+        self.assertEqual(db.get_last(1), sorted([row + (None,) for row in readings[:2]], key=lambda row: row[2] or '', reverse=True))
         plan = self.conn.execute('EXPLAIN QUERY PLAN SELECT * FROM readings WHERE user_id = 1 ORDER BY datetime DESC LIMIT 5').fetchall()
         self.assertIn('idx_readings_user_datetime', str(plan))
         before = self.snapshot()
@@ -204,8 +205,8 @@ class DatabaseFoundationTests(unittest.TestCase):
         self.conn.execute("UPDATE users SET language = 'EN', created_at = '2020-01-01 00:00:00' WHERE user_id = 1")
         self.conn.commit()
         db.ensure_user(1)
-        db.add_reading(1, 120, 80)
-        self.assertEqual(self.conn.execute('SELECT * FROM users').fetchall(), [(1, 'EN', '2020-01-01 00:00:00')])
+        db.add_reading(1, 120, 80, measured_at=datetime.now(timezone.utc))
+        self.assertEqual(self.conn.execute('SELECT * FROM users').fetchall(), [(1, 'EN', '2020-01-01 00:00:00', None)])
         self.assertEqual(db.get_user_language(1), 'EN')
 
     def test_ensure_uses_legacy_language_and_reading_creates_user(self):
@@ -213,7 +214,7 @@ class DatabaseFoundationTests(unittest.TestCase):
         self.conn.execute("INSERT INTO user_settings VALUES (1, 'EN')")
         self.conn.commit()
         db.ensure_user(1)
-        db.add_reading(2, 120, 80)
+        db.add_reading(2, 120, 80, measured_at=datetime.now(timezone.utc))
         self.assertEqual(self.conn.execute('SELECT user_id, language FROM users ORDER BY user_id').fetchall(), [(1, 'EN'), (2, 'UA')])
 
     def test_language_transition(self):
@@ -246,7 +247,7 @@ class DatabaseFoundationTests(unittest.TestCase):
         self.conn.execute("CREATE TRIGGER reject_reading BEFORE INSERT ON readings BEGIN SELECT RAISE(ABORT, 'test'); END")
         self.conn.commit()
         with self.assertRaises(sqlite3.IntegrityError):
-            db.add_reading(1, 120, 80)
+            db.add_reading(1, 120, 80, measured_at=datetime.now(timezone.utc))
         self.assertEqual(self.conn.execute('SELECT * FROM users').fetchall(), [])
 
     def test_migration_failure_rolls_back_and_retry_succeeds(self):
@@ -290,7 +291,7 @@ class DatabaseFoundationTests(unittest.TestCase):
 
     def test_newer_version_is_rejected_without_changes(self):
         self.fresh()
-        self.conn.execute('INSERT INTO schema_migrations (version) VALUES (3)')
+        self.conn.execute('INSERT INTO schema_migrations (version) VALUES (4)')
         self.conn.commit()
         before = self.snapshot()
         for operation in (db.init_db, db.check_database):
@@ -344,7 +345,8 @@ class DatabaseFoundationTests(unittest.TestCase):
         from unittest.mock import AsyncMock
         self.fresh()
         namespace = {'ensure_user': db.ensure_user, 'get_user_language': db.get_user_language,
-                     'get_text': lambda **kwargs: 'welcome', 'set_chat_commands': AsyncMock()}
+                     'get_text': lambda **kwargs: 'welcome', 'set_chat_commands': AsyncMock(),
+                     'get_user_timezone': db.get_user_timezone, 'show_timezone': AsyncMock()}
         exec(compile(ast.Module(body=[start], type_ignores=[]), '<start handler>', 'exec'), namespace)
         update = SimpleNamespace(effective_user=SimpleNamespace(id=42),
                                  message=SimpleNamespace(reply_text=AsyncMock()))

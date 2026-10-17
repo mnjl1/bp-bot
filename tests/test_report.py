@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import db
 from constants import REPORT_MESSAGE_LIMIT
 from messages import get_text
-from utils import format_report, get_report_date_range
+from utils import format_report, get_report_date_range, get_report_candidate_range
 
 
 START = '2026-08-08 00:00:00'
@@ -19,7 +19,7 @@ END = '2026-09-07 00:00:00'
 
 
 def reading(number=1, pulse=79, note=None, timestamp='2026-09-06 08:00:00'):
-    return (number, 42, timestamp, 128, 83, pulse, note)
+    return (number, 42, timestamp, 128, 83, pulse, note, 'UTC')
 
 
 class ReportQueryTests(unittest.TestCase):
@@ -28,14 +28,15 @@ class ReportQueryTests(unittest.TestCase):
             path = Path(directory) / 'test.sqlite'
             with sqlite3.connect(path) as conn:
                 conn.execute(db.create_readings_table)
+                conn.execute('ALTER TABLE readings ADD COLUMN timezone TEXT NULL')
                 conn.executemany(
-                    'INSERT INTO readings VALUES (?, ?, ?, ?, ?, ?, ?)', [
+                    'INSERT INTO readings VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
                         reading(4, timestamp=END),
                         reading(3, timestamp='2026-09-06 23:59:59'),
                         reading(2, timestamp=START),
                         reading(1, timestamp=START),
                         reading(5, timestamp='2026-08-07 23:59:59'),
-                        (6, 99, START, 120, 80, None, None),
+                        (6, 99, START, 120, 80, None, None, None),
                     ])
                 before = list(conn.iterdump())
             original = db._connect
@@ -63,7 +64,7 @@ class ReportFormattingTests(unittest.TestCase):
 
     def test_localization_missing_values_and_averages(self):
         records = [reading(), reading(2, pulse=None, note='  '),
-                   (3, 42, '2026-09-06 18:00:00', 135, 95, 75, 'poor sleep')]
+                   (3, 42, '2026-09-06 18:00:00', 135, 95, 75, 'poor sleep', 'UTC')]
         for lang in ('UA', 'EN'):
             with self.subTest(lang=lang):
                 result = html.unescape(''.join(format_report(records, START, END, lang)))
@@ -144,7 +145,7 @@ class ReportFormattingTests(unittest.TestCase):
 
     def test_invalid_legacy_values_warn_and_do_not_affect_average(self):
         rows = [reading(), reading(2, timestamp='bad-date'),
-                (3, 42, START, None, 80, None, None),
+                (3, 42, START, None, 80, None, None, None),
                 reading(4, pulse='bad'), reading(5, note=b'bad')]
         result = ''.join(format_report(rows, START, END, 'EN'))
         self.assertIn(get_text('EN', 'report_invalid'), result)
@@ -162,6 +163,8 @@ class ReportHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.namespace = {
             'get_user_language': Mock(return_value='EN'),
             'get_text': get_text,
+            'get_user_timezone': Mock(return_value='Europe/Kyiv'),
+            'get_report_candidate_range': get_report_candidate_range,
             'get_report_date_range': Mock(return_value=(START, END)),
             'get_readings_by_date_range': Mock(return_value=[reading()]),
             'format_report': Mock(return_value=['first', 'second']),
@@ -175,8 +178,9 @@ class ReportHandlerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_private_report_immediate_and_sequential(self):
         await self.namespace['show_report'](self.update, None)
-        self.namespace['get_readings_by_date_range'].assert_called_once_with(42, START, END)
-        self.namespace['format_report'].assert_called_once_with([reading()], START, END, 'EN')
+        self.namespace['get_report_date_range'].assert_called_once_with(user_timezone='Europe/Kyiv')
+        self.namespace['get_readings_by_date_range'].assert_called_once_with(42, *get_report_candidate_range(START, END))
+        self.namespace['format_report'].assert_called_once_with([reading()], START, END, 'EN', 'Europe/Kyiv')
         calls = self.update.effective_message.reply_text.await_args_list
         self.assertEqual([call.args[0] for call in calls], ['first', 'second'])
         self.assertTrue(all(call.kwargs == {'parse_mode': 'HTML'} for call in calls))

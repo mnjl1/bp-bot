@@ -1,4 +1,14 @@
 UA = {
+    'command_timezone': 'Налаштувати місцевий час',
+    'timezone_west': 'Західна Європа',
+    'timezone_central': 'Центральна Європа',
+    'timezone_east': 'Східна Європа',
+    'timezone_other': 'Інший регіон',
+    'timezone_setup': 'Оберіть регіон, де ви зараз живете, щоб правильно показувати дати й час вимірів.\n\nЗахідна Європа — Велика Британія, Ірландія, Португалія.\nЦентральна Європа — Польща, Німеччина, Франція, Італія, Іспанія, Чехія, Австрія.\nСхідна Європа — Україна, Румунія, Болгарія, Греція, Фінляндія, Молдова, Естонія, Латвія, Литва.',
+    'timezone_other_message': 'Інші регіони поки недоступні. Налаштування залишилось без змін. Виміри можна зберігати як завжди.',
+    'timezone_saved': 'Місцевий час налаштовано: {region}.',
+    'time_neutral': 'час не налаштовано',
+    'timezone_neutral_notice': 'Дати без налаштованого місцевого часу можуть відрізнятися від ваших. Оберіть регіон через /timezone.',
     'last_empty': 'Ще немає збережених вимірів. Надішліть показники, наприклад: 120/80/72.',
     'avg_empty': 'За останні 7 днів немає вимірів. Надішліть показники, наприклад: 120/80/72.',
     'command_start': 'Почати',
@@ -60,6 +70,7 @@ UA = {
           """,
     'help_text': '''Доступні команди:
 
+                  /timezone - Налаштувати місцевий час
                   /start - Вітальне повідомлення
                   /help - Показати цю довідку
                   /support - Добровільна підтримка бота
@@ -77,6 +88,16 @@ UA = {
 }
 
 EN = {
+    'command_timezone': 'Set local time',
+    'timezone_west': 'Western Europe',
+    'timezone_central': 'Central Europe',
+    'timezone_east': 'Eastern Europe',
+    'timezone_other': 'Other region',
+    'timezone_setup': 'Choose the region where you currently live so readings show the right dates and times.\n\nWestern Europe — United Kingdom, Ireland, Portugal.\nCentral Europe — Poland, Germany, France, Italy, Spain, Czechia, Austria.\nEastern Europe — Ukraine, Romania, Bulgaria, Greece, Finland, Moldova, Estonia, Latvia, Lithuania.',
+    'timezone_other_message': 'Other regions are not available yet. Your setting has not changed. You can keep saving readings as usual.',
+    'timezone_saved': 'Local time set: {region}.',
+    'time_neutral': 'time not set',
+    'timezone_neutral_notice': 'Dates without a local time setting may differ from yours. Choose your region with /timezone.',
     'last_empty': 'No readings saved yet. Send a reading, for example: 120/80/72.',
     'avg_empty': 'No readings in the last 7 days. Send a reading, for example: 120/80/72.',
     'command_start': 'Start',
@@ -136,6 +157,7 @@ EN = {
                         Example: 120/80/72''',
     'help_text': '''Available commands:
 
+                      /timezone - Set local time
                       /start - Welcome message
                       /help - Show this help
                       /support - Voluntary bot support

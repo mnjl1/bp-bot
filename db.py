@@ -2,7 +2,10 @@ import argparse
 import sqlite3
 from contextlib import closing
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+from constants import TIMEZONE_REGIONS
 
 
 create_readings_table = """
@@ -26,7 +29,7 @@ create_user_settings_table = """
 
 
 DB_PATH = Path(__file__).resolve().parent / 'bp.db'
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 CREATE_USERS = """
     CREATE TABLE users (
@@ -83,14 +86,47 @@ def _version(conn):
     )]
     if any(version > SCHEMA_VERSION for version in versions):
         raise RuntimeError('Database version is newer than this application supports')
-    if versions not in ([], [1], [1, 2]):
+    if versions not in ([], [1], [1, 2], [1, 2, 3]):
         raise RuntimeError('Unexpected migration history')
     return versions[-1] if versions else 0
 
 
 def _check_schema(conn, version):
-    if version == 2:
-        _check_schema(conn, 1)
+    if version not in (0, 1, 2, 3):
+        raise RuntimeError('Unsupported schema version')
+    _check_table(conn, 'readings', [
+        ('id', 'INTEGER', 0, 1), ('user_id', 'INTEGER', 0, 0),
+        ('datetime', 'TEXT', 0, 0), ('systolic', 'INTEGER', 0, 0),
+        ('diastolic', 'INTEGER', 0, 0), ('pulse', 'INTEGER', 0, 0),
+        ('note', 'TEXT', 0, 0),
+    ] + ([('timezone', 'TEXT', 0, 0)] if version == 3 else []))
+    _check_table(conn, 'user_settings', [
+        ('user_id', 'INTEGER', 0, 1), ('language', 'TEXT', 0, 0),
+    ])
+    timestamp_columns = [('readings', 'datetime')]
+    if version >= 1:
+        timestamp_columns.append(('users', 'created_at'))
+    for table, column in timestamp_columns:
+        columns = conn.execute(f'PRAGMA table_info({table})').fetchall()
+        default = next((row[4] for row in columns if row[1] == column), None)
+        if default is None or default.strip().upper() != 'CURRENT_TIMESTAMP':
+            raise RuntimeError(f'Expected CURRENT_TIMESTAMP default for {table}.{column}')
+    if version >= 1:
+        _check_table(conn, 'users', [
+            ('user_id', 'INTEGER', 0, 1), ('language', 'TEXT', 1, 0),
+            ('created_at', 'TEXT', 1, 0),
+        ] + ([('timezone', 'TEXT', 0, 0)] if version == 3 else []))
+        indexes = conn.execute('PRAGMA index_list(readings)').fetchall()
+        if not any(row[1] == 'idx_readings_user_datetime'
+                   and row[2] == 0 and row[4] == 0 for row in indexes):
+            raise RuntimeError('Missing or incompatible readings index')
+        columns = conn.execute(
+            'PRAGMA index_info(idx_readings_user_datetime)'
+        ).fetchall()
+        if [row[2] for row in columns] != ['user_id', 'datetime']:
+            raise RuntimeError('Unexpected readings index columns')
+
+    if version >= 2:
         _check_table(conn, 'payments', [
             ('id', 'INTEGER', 0, 1), ('user_id', 'INTEGER', 1, 0),
             ('currency', 'TEXT', 1, 0), ('amount', 'INTEGER', 1, 0),
@@ -105,40 +141,11 @@ def _check_schema(conn, version):
         ).fetchone()[0]
         if ''.join(ddl.lower().split()) != ''.join(CREATE_PAYMENTS.lower().split()):
             raise RuntimeError('Unexpected constraints for payments')
-        return
-    if version not in (0, 1):
-        raise RuntimeError('Unsupported schema version')
-    _check_table(conn, 'readings', [
-        ('id', 'INTEGER', 0, 1), ('user_id', 'INTEGER', 0, 0),
-        ('datetime', 'TEXT', 0, 0), ('systolic', 'INTEGER', 0, 0),
-        ('diastolic', 'INTEGER', 0, 0), ('pulse', 'INTEGER', 0, 0),
-        ('note', 'TEXT', 0, 0),
-    ])
-    _check_table(conn, 'user_settings', [
-        ('user_id', 'INTEGER', 0, 1), ('language', 'TEXT', 0, 0),
-    ])
-    timestamp_columns = [('readings', 'datetime')]
-    if version == 1:
-        timestamp_columns.append(('users', 'created_at'))
-    for table, column in timestamp_columns:
-        columns = conn.execute(f'PRAGMA table_info({table})').fetchall()
-        default = next((row[4] for row in columns if row[1] == column), None)
-        if default is None or default.strip().upper() != 'CURRENT_TIMESTAMP':
-            raise RuntimeError(f'Expected CURRENT_TIMESTAMP default for {table}.{column}')
-    if version == 1:
-        _check_table(conn, 'users', [
-            ('user_id', 'INTEGER', 0, 1), ('language', 'TEXT', 1, 0),
-            ('created_at', 'TEXT', 1, 0),
-        ])
-        indexes = conn.execute('PRAGMA index_list(readings)').fetchall()
-        if not any(row[1] == 'idx_readings_user_datetime'
-                   and row[2] == 0 and row[4] == 0 for row in indexes):
-            raise RuntimeError('Missing or incompatible readings index')
-        columns = conn.execute(
-            'PRAGMA index_info(idx_readings_user_datetime)'
-        ).fetchall()
-        if [row[2] for row in columns] != ['user_id', 'datetime']:
-            raise RuntimeError('Unexpected readings index columns')
+    if version == 3:
+        for table in ('users', 'readings'):
+            column = conn.execute(f'PRAGMA table_info({table})').fetchall()[-1]
+            if column[4] is not None:
+                raise RuntimeError(f'Unexpected timezone default for {table}')
 
 
 def check_database(database=None):
@@ -196,6 +203,15 @@ def _migrate_v1_to_v2(conn):
     conn.execute('INSERT INTO schema_migrations (version) VALUES (2)')
 
 
+def _migrate_v2_to_v3(conn):
+    """Append nullable timezone fields; preserve all historical values."""
+    _check_schema(conn, 2)
+    conn.execute('ALTER TABLE users ADD COLUMN timezone TEXT NULL')
+    conn.execute('ALTER TABLE readings ADD COLUMN timezone TEXT NULL')
+    _check_schema(conn, 3)
+    conn.execute('INSERT INTO schema_migrations (version) VALUES (3)')
+
+
 def init_db(database, *, initialize=False):
     """Explicitly apply required migrations to the latest schema atomically."""
     with closing(_connect(database, 'rwc' if initialize else 'rw')) as conn:
@@ -212,6 +228,9 @@ def init_db(database, *, initialize=False):
                 version = 1
             if version == 1:
                 _migrate_v1_to_v2(conn)
+                version = 2
+            if version == 2:
+                _migrate_v2_to_v3(conn)
             conn.execute('COMMIT')
         except Exception:
             try:
@@ -283,16 +302,32 @@ def ensure_user(user_id):
         _ensure_user(conn, user_id)
 
 
-def add_reading(user_id, systolic, diastolic, pulse=None, note=None):
+def add_reading(user_id, systolic, diastolic, pulse=None, note=None, *, measured_at):
+    if measured_at.tzinfo is None or measured_at.utcoffset() is None:
+        raise ValueError('Reading timestamp must be timezone-aware')
+    timestamp = measured_at.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    with closing(_connect(DB_PATH)) as conn, conn:
+        # The first write acquires SQLite's writer lock before reading the zone.
+        _ensure_user(conn, user_id)
+        conn.execute("""
+            INSERT INTO readings (user_id, datetime, systolic, diastolic, pulse, note, timezone)
+            VALUES (?, ?, ?, ?, ?, ?, (SELECT timezone FROM users WHERE user_id = ?))
+        """, (user_id, timestamp, systolic, diastolic, pulse, note, user_id))
+
+
+def get_user_timezone(user_id):
+    with closing(_connect(DB_PATH, 'ro')) as conn:
+        row = conn.execute('SELECT timezone FROM users WHERE user_id = ?', (user_id,)).fetchone()
+        return row[0] if row else None
+
+
+def set_user_timezone(user_id, zone):
+    if zone not in TIMEZONE_REGIONS.values():
+        raise ValueError('Unsupported timezone')
+    ZoneInfo(zone)  # Fail before writing if runtime timezone data is unavailable.
     with closing(_connect(DB_PATH)) as conn, conn:
         _ensure_user(conn, user_id)
-        cur = conn.cursor()
-        cur.execute("""
-                    INSERT INTO readings (user_id, systolic, diastolic, pulse, note)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (user_id, systolic, diastolic, pulse, note)
-        )
+        conn.execute('UPDATE users SET timezone = ? WHERE user_id = ?', (zone, user_id))
 
 
 def get_last(user_id, n=5):
@@ -314,24 +349,29 @@ def get_readings_by_date_range(user_id, start_timestamp, end_timestamp):
         raise ValueError('user_id must not be None')
     with closing(_connect(DB_PATH, 'ro')) as conn:
         return conn.execute("""
-            SELECT id, user_id, datetime, systolic, diastolic, pulse, note
+            SELECT id, user_id, datetime, systolic, diastolic, pulse, note, timezone
             FROM readings
             WHERE user_id = ? AND datetime >= ? AND datetime < ?
             ORDER BY datetime ASC, id ASC
         """, (user_id, start_timestamp, end_timestamp)).fetchall()
 
 
-def get_avg(user_id, days=7):
+def get_avg(user_id, days=7, *, now=None):
     with closing(_connect(DB_PATH)) as conn, conn:
-        last_days = datetime.now() - timedelta(days=days)
+        now = now if now is not None else datetime.now(timezone.utc)
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError('Average timestamp must be timezone-aware')
+        now = now.astimezone(timezone.utc)
+        last_days = (now - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+        end = now.strftime('%Y-%m-%d %H:%M:%S')
         cur = conn.cursor()
         cur.execute(
             """
             SELECT AVG(systolic), AVG(diastolic), AVG(pulse)
             FROM readings
-            WHERE user_id = ? and datetime > ?
+            WHERE user_id = ? and datetime > ? and datetime <= ?
             """,
-            (user_id, last_days)
+            (user_id, last_days, end)
         )
         return cur.fetchall()
 

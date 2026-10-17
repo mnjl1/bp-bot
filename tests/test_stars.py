@@ -55,8 +55,10 @@ class PaymentDatabaseTests(unittest.TestCase):
         tables = ('users', 'readings', 'user_settings')
         before = {t: self.conn.execute(f'SELECT * FROM {t}').fetchall() for t in tables}
         ddl = self.conn.execute("SELECT name, sql FROM sqlite_master WHERE name IN ('users', 'readings', 'user_settings') ORDER BY name").fetchall()
-        db.init_db(self.path)
-        db.check_database(self.path)
+        # Isolate the v1 -> v2 receipt migration; v3 has its own schema tests.
+        with self.conn:
+            db._migrate_v1_to_v2(self.conn)
+        db._check_schema(self.conn, 2)
         self.assertEqual(before, {t: self.conn.execute(f'SELECT * FROM {t}').fetchall() for t in tables})
         self.assertEqual(ddl, self.conn.execute("SELECT name, sql FROM sqlite_master WHERE name IN ('users', 'readings', 'user_settings') ORDER BY name").fetchall())
         self.assertEqual(self.conn.execute('SELECT version FROM schema_migrations ORDER BY version').fetchall(), [(1,), (2,)])
