@@ -6,7 +6,7 @@ from telegram.ext import (Application, CommandHandler, MessageHandler, filters,
                           CallbackQueryHandler, PreCheckoutQueryHandler)
 from telegram import Update, BotCommand, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
 from db import (add_reading, get_last, get_avg, get_user_language,
-                set_user_language, ensure_user, check_database, get_readings_by_date_range,
+                set_user_language, ensure_user, check_database, get_readings_by_date_range, delete_reading,
                 record_payment, get_user_timezone, set_user_timezone)
 from utils import get_period_of_day, validate_reading, process_user_input, convert_date
 from utils import (get_report_date_range, get_report_candidate_range, format_report,
@@ -47,7 +47,7 @@ BOT_TOKEN = os.environ['BOT_TOKEN']
 
 def get_commands(lang):
     return [BotCommand(name, get_text(lang, f'command_{name}'))
-            for name in ('start', 'help', 'last', 'avg', 'report', 'support', 'paysupport', 'terms', 'timezone')]
+            for name in ('start', 'help', 'last', 'delete_last', 'avg', 'report', 'support', 'paysupport', 'terms', 'timezone')]
 
 
 async def set_chat_commands(update, context, lang):
@@ -161,6 +161,102 @@ async def show_last_readings(update, context):
     if neutral:
         report += get_text(lang, 'timezone_neutral_notice')
     await update.message.reply_text(report)
+
+
+async def delete_last(update, context):
+    user = update.effective_user
+    chat = update.effective_chat
+    user_id = user.id if user else None
+    # Validate before even looking up the language in SQLite. bool is not an ID.
+    if type(user_id) is not int or not 0 < user_id < 2 ** 63:
+        return
+    lang = get_user_language(user_id)
+    if chat is None or chat.type != 'private':
+        await update.effective_message.reply_text(get_text(lang, 'delete_private'))
+        return
+    # A new request invalidates the previous prompt, including an empty request.
+    context.user_data.pop('delete_last_pending', None)
+    records = get_last(user.id, n=1)
+    if not records:
+        await update.effective_message.reply_text(get_text(lang, 'delete_empty'))
+        return
+    record = records[0]
+    zone = effective_timezone(record, get_user_timezone(user.id))
+    date = convert_date(record[2], zone)
+    period = get_period_of_day(record[2], lang, zone)
+    preview = f'{date} ({period}) {record[3]}/{record[4]}'
+    if record[5] is not None:
+        preview += f", {get_text(lang, 'pulse')} {record[5]}"
+    if record[6]:
+        # At most 2,000 UTF-16 units of note, leaving room for the prompt.
+        note = record[6][:1000]
+        preview += '\n' + note + ('…' if len(record[6]) > 1000 else '')
+    if not zone:
+        preview += '\n' + get_text(lang, 'timezone_neutral_notice')
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton(get_text(lang, 'delete_confirm'),
+                             callback_data=f'delete_last:confirm:{record[0]}'),
+        InlineKeyboardButton(get_text(lang, 'delete_keep'),
+                             callback_data=f'delete_last:keep:{record[0]}'),
+    ]])
+    message = await update.effective_message.reply_text(
+        get_text(lang, 'delete_prompt').format(reading=preview), reply_markup=keyboard)
+    context.user_data['delete_last_pending'] = (user.id, record[0], chat.id, message.message_id)
+
+
+async def delete_last_callback(update, context):
+    query = update.callback_query
+    user = update.effective_user
+    chat = update.effective_chat
+    user_id = user.id if user else None
+    valid_user = type(user_id) is int and 0 < user_id < 2 ** 63
+    lang = get_user_language(user_id) if valid_user else 'UA'
+    pending = (context.user_data or {}).get('delete_last_pending')
+    data = query.data.split(':') if isinstance(query.data, str) else []
+    target = None
+    if (len(data) == 3 and data[0] == 'delete_last'
+            and data[1] in ('confirm', 'keep') and len(data[2]) <= 20
+            and data[2].removeprefix('-').isascii()
+            and data[2].removeprefix('-').isdigit()):
+        number = int(data[2])
+        if -(2 ** 63) <= number < 2 ** 63 and str(number) == data[2]:
+            target = number
+    valid = (target is not None and valid_user and chat is not None
+             and chat.type == 'private' and query.message is not None
+             and query.from_user is not None and type(query.from_user.id) is int
+             and query.from_user.id == user.id
+             and query.message.chat.id == chat.id and query.message.chat.type == 'private'
+             and pending == (user.id, target, chat.id, query.message.message_id))
+    if valid:
+        # Consume before any await: duplicate callbacks cannot repeat deletion.
+        context.user_data.pop('delete_last_pending')
+        if data[1] == 'keep':
+            key = 'delete_cancelled'
+        else:
+            key = 'delete_success' if delete_reading(user.id, target) else 'delete_missing'
+    else:
+        key = 'delete_expired'
+    text = get_text(lang, key)
+    try:
+        await query.answer(text if not valid else None)
+    except TelegramError:
+        logger.warning('Could not answer deletion callback')
+    if not valid:
+        return
+    try:
+        await query.edit_message_text(text, reply_markup=None)
+    except (TelegramError, TypeError):
+        # PTB also raises TypeError when Telegram marks a message inaccessible.
+        # The result is already final. Never retry the database operation.
+        logger.warning('Could not edit deletion confirmation')
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except (TelegramError, TypeError):
+            logger.warning('Could not remove deletion confirmation buttons')
+        try:
+            await context.bot.send_message(chat_id=chat.id, text=text)
+        except TelegramError:
+            logger.warning('Could not send deletion outcome')
 
 
 async def show_avg(update, context):
@@ -330,6 +426,8 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler('help', help))
     app.add_handler(MessageHandler(filters.Regex(READING_PATTERN), handle_reading))
     app.add_handler(CommandHandler('last', show_last_readings))
+    app.add_handler(CommandHandler('delete_last', delete_last))
+    app.add_handler(CallbackQueryHandler(delete_last_callback, pattern=r'\Adelete_last(?::|\Z)'))
     app.add_handler(CommandHandler('avg', show_avg))
     app.add_handler(CommandHandler('report', show_report))
     app.add_handler(CommandHandler('en', set_english))

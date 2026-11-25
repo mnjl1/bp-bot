@@ -336,11 +336,20 @@ def get_last(user_id, n=5):
         cur.execute(
                     """
                     SELECT * FROM readings WHERE user_id = ?
-                    ORDER BY datetime DESC LIMIT ?
+                    ORDER BY datetime DESC, id DESC LIMIT ?
                     """,
                     (user_id, n)
         )
         return cur.fetchall()
+
+
+def delete_reading(user_id, reading_id):
+    """Delete only the selected reading owned by this user."""
+    with closing(_connect(DB_PATH)) as conn, conn:
+        cursor = conn.execute(
+            'DELETE FROM readings WHERE id = ? AND user_id = ?',
+            (reading_id, user_id))
+        return cursor.rowcount == 1
 
 
 def get_readings_by_date_range(user_id, start_timestamp, end_timestamp):

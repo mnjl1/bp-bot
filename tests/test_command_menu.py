@@ -13,11 +13,11 @@ import db
 from messages import get_text
 
 
-COMMANDS = ['start', 'help', 'last', 'avg', 'report', 'support', 'paysupport', 'terms', 'timezone']
+COMMANDS = ['start', 'help', 'last', 'delete_last', 'avg', 'report', 'support', 'paysupport', 'terms', 'timezone']
 DESCRIPTIONS = {
-    'UA': ['Почати', 'Допомога', 'Останні 5 вимірів', 'Середнє за 7 днів',
+    'UA': ['Почати', 'Допомога', 'Останні 5 вимірів', 'Видалити останній запис', 'Середнє за 7 днів',
            'Звіт за 30 днів', 'Підтримати бота', 'Допомога з оплатою', 'Умови підтримки', 'Налаштувати місцевий час'],
-    'EN': ['Start', 'Help', 'Last 5 readings', '7-day average',
+    'EN': ['Start', 'Help', 'Last 5 readings', 'Delete last reading', '7-day average',
            '30-day report', 'Support the bot', 'Payment support', 'Support terms', 'Set local time'],
 }
 

@@ -1,4 +1,14 @@
 UA = {
+    'command_delete_last': 'Видалити останній запис',
+    'delete_private': 'Видалення доступне лише в приватному чаті з ботом.',
+    'delete_empty': 'Немає збережених вимірів для видалення.',
+    'delete_prompt': 'Видалити цей вимір?\n\n{reading}',
+    'delete_confirm': 'Видалити',
+    'delete_keep': 'Залишити',
+    'delete_success': 'Показаний вимір видалено.',
+    'delete_cancelled': 'Видалення скасовано.',
+    'delete_missing': 'Цього виміру вже немає. Інші виміри не змінено.',
+    'delete_expired': 'Підтвердження недійсне або застаріло. Спробуйте /delete_last знову.',
     'command_timezone': 'Налаштувати місцевий час',
     'timezone_west': 'Західна Європа',
     'timezone_central': 'Центральна Європа',
@@ -78,6 +88,7 @@ UA = {
                   /terms - Умови підтримки
                   /report - Безкоштовний звіт за 30 днів
                   /last - Останні 5 вимірів
+                  /delete_last - Видалити останній запис
                   /avg - Середнє за 7 днів
                   /en - Перемкнути на English
                   /ua - Перемкнути на Українську
@@ -88,6 +99,16 @@ UA = {
 }
 
 EN = {
+    'command_delete_last': 'Delete last reading',
+    'delete_private': 'Deletion is available only in a private chat with the bot.',
+    'delete_empty': 'No saved readings to delete.',
+    'delete_prompt': 'Delete this reading?\n\n{reading}',
+    'delete_confirm': 'Delete',
+    'delete_keep': 'Keep',
+    'delete_success': 'The displayed reading was deleted.',
+    'delete_cancelled': 'Deletion cancelled.',
+    'delete_missing': 'This reading is already gone. Other readings were not changed.',
+    'delete_expired': 'This confirmation is invalid or expired. Try /delete_last again.',
     'command_timezone': 'Set local time',
     'timezone_west': 'Western Europe',
     'timezone_central': 'Central Europe',
@@ -165,6 +186,7 @@ EN = {
                       /terms - Support terms
                       /report - Free 30-day report
                       /last - Last 5 readings
+                      /delete_last - Delete last reading
                       /avg - 7-day average
                       /en - Switch to English
                       /ua - Switch to Ukrainian
